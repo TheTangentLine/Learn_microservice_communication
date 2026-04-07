@@ -175,3 +175,10 @@ Take a breath, because tomorrow we start Week 2, and we are going to tear this s
 **Review Question to kick off Week 2:**
 In our current Week 1 project, if 100,000 people try to buy the Nakroth skin at the exact same millisecond, the Gateway passes 100,000 HTTP requests to the Order Service, which opens 100,000 gRPC connections to the Inventory Service.
 **Based on what we discussed on Day 2, what is going to happen to our system, and what specific tool will we introduce in Week 2 to fix it?**
+
+**Answer:**
+However, the bottleneck just moves downstream. The Order Service will instantly open 100,000 gRPC connections to the Inventory Service, and the Inventory Service will try to execute 100,000 database queries at the exact same millisecond. The database catches on fire, the Inventory Service crashes, and your users get errors.
+
+To solve this, we introduce a **Message Broker** (like RabbitMQ or Kafka) as a shock absorber.
+
+Welcome to Week 2.
