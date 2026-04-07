@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  inventory:
+    build: ./inventory
+    ports:
+      - "8081:8081"
+
+  order:
+    build: ./order
+    ports:
+      - "8080:8080"
+    depends_on:
+      - inventory

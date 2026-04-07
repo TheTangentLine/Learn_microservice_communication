@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+// This tells protoc to put the generated code in a folder named "pb"
+option go_package = "./pb";
+
+package store;
+
+message StockRequest {
+  string item_name = 1;
+}
+
+message StockResponse {
+  bool in_stock = 1;
+}
+
+service InventoryService {
+  rpc CheckStock (StockRequest) returns (StockResponse);
+}

@@ -1,0 +1,19 @@
+services:
+  inventory:
+    build:
+      context: .           # root of week1-final (where go.mod lives)
+      dockerfile: ./inventory/Dockerfile
+  order:
+    build:
+      context: .
+      dockerfile: ./order/Dockerfile
+    depends_on:
+      - inventory
+  gateway:
+    build:
+      context: .
+      dockerfile: ./gateway/Dockerfile
+    ports:
+      - "8000:8000" # ONLY the Gateway is exposed to the outside world
+    depends_on:
+      - order
