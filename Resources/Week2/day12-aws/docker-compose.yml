@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  localstack:
+    image: localstack/localstack:3.0.0
+    ports:
+      - "4566:4566" # The main port for all fake AWS services
+    environment:
+      - SERVICES=sqs,sns
+      - DOCKER_HOST=unix:///var/run/docker.sock
