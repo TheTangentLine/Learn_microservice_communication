@@ -131,3 +131,8 @@ RabbitMQ deletes messages the exact moment they are successfully acknowledged by
 If we want a new Data Analytics service to calculate "Total Items Sold Today", but the messages have already been deleted by the Inventory service hours ago, RabbitMQ can't help us.
 
 **Without looking ahead to Kafka, how might an architectural system solve the problem of needing to read historical events that have already happened and been processed?**
+
+**Answer:**
+
+1.  **"Saving it to db beforehand":** This is exactly an architectural pattern called **Event Sourcing**. Instead of just saving the _current state_ of an order (e.g., `status = shipped`), you save every single action as an immutable fact in a database (`OrderPlaced`, `PaymentProcessed`, `ItemShipped`). If a new analytics service spins up a year later, it simply reads that database table from the beginning to rebuild the history.
+2.  **"Read logs":** This is the exact philosophy behind the technology we are starting today. What if the message broker _was_ a log file?
