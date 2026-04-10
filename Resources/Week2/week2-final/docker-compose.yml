@@ -5,16 +5,23 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   inventory:
     build: ./inventory
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
 
   order:
     build: ./order
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
 
   gateway:
     build: ./gateway
