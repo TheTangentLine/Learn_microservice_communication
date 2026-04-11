@@ -27,7 +27,7 @@ We are going to use the Docker container you spun up yesterday and interact with
    Run this command to execute a script _inside_ your Docker container. We are creating a topic with 3 partitions.
 
    ```bash
-   docker exec -it <your-kafka-container-name> /opt/bitnami/kafka/bin/kafka-topics.sh \
+   docker exec -it <your-kafka-container-name> /opt/kafka/bin/kafka-topics.sh \
      --create --topic order-events \
      --partitions 3 \
      --replication-factor 1 \
@@ -38,7 +38,7 @@ We are going to use the Docker container you spun up yesterday and interact with
    Start the interactive producer CLI.
 
    ```bash
-   docker exec -it <your-kafka-container-name> /opt/bitnami/kafka/bin/kafka-console-producer.sh \
+   docker exec -it <your-kafka-container-name> /opt/kafka/bin/kafka-console-producer.sh \
      --topic order-events \
      --bootstrap-server localhost:9092
    ```
@@ -48,7 +48,7 @@ We are going to use the Docker container you spun up yesterday and interact with
 4. **Open Terminal 3 (The Consumer):**
    Start the interactive consumer CLI. We will tell it to read from the very beginning of the sliding window!
    ```bash
-   docker exec -it <your-kafka-container-name> /opt/bitnami/kafka/bin/kafka-console-consumer.sh \
+   docker exec -it <your-kafka-container-name> /opt/kafka/bin/kafka-console-consumer.sh \
      --topic order-events \
      --from-beginning \
      --bootstrap-server localhost:9092
