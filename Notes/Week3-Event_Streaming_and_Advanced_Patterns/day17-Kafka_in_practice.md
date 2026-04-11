@@ -127,3 +127,11 @@ We just saw how Kafka guarantees strict ordering by forcing all messages with th
 But think about how HTTP gateways work. If 10,000 users hit our API Gateway at once, our `Order Service` spins up 10,000 concurrent Goroutines to handle those HTTP requests. Those Goroutines all try to call `w.WriteMessages` to Kafka simultaneously.
 
 **Even if we use the exact same Key (`"user_99"`), is the _Order Service_ guaranteed to send those messages to Kafka in the exact order the user clicked the button? Why or why not?** Let me know what you think before we jump into Redis on Day 18!
+
+**Answer:**
+
+Even though Kafka strictly orders messages inside a single partition, **Kafka can only order messages based on when it _receives_ them, not when the user _clicked_ them.**
+
+If 10,000 users click a button, their internet speeds are different. Even if they hit the API Gateway at the same time, Go's CPU scheduler will execute those 10,000 Goroutines in a completely unpredictable, random order. User #5 might hit the Kafka producer before User #1.
+
+**The Golden Rule:** Kafka guarantees the order of _receipt_, not the order of _creation_. (If you absolutely need creation order, you have to attach client-side timestamps and sort them later in your analytics database!).
