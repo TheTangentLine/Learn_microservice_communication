@@ -1,78 +1,101 @@
 ### **Day 4: RPC & gRPC Fundamentals**
 
-Today, we move away from standard REST APIs (using JSON over HTTP/1.1) and look at the industry standard for fast, internal microservice communication: **gRPC**.
+Today we move away from standard REST (JSON over HTTP/1.1) and look at the industry standard for fast internal microservice communication: **gRPC**.
 
 #### **1. What is RPC? (Remote Procedure Call)**
 
-In a REST API, you think in terms of "Resources" (e.g., `GET /inventory/123`).
-In RPC, you think in terms of "Actions" or "Functions." The goal of RPC is to make a network call look and feel exactly like calling a local function in your code, like `checkStock(item_id)`.
+In a REST API, you think in terms of **resources** (e.g., `GET /inventory/123`).
+In RPC, you think in terms of **actions**. The goal is to make a network call look and feel exactly like calling a local function — `checkStock(item_id)`.
 
 #### **2. Why gRPC over REST?**
 
-gRPC was developed by Google and has become the standard for service-to-service communication. It solves a lot of the performance bottlenecks of REST:
+gRPC was developed by Google and has become the standard for service-to-service communication.
 
-- **Protocol Buffers (Protobuf) instead of JSON:** JSON is text-based, heavy, and requires your CPU to parse it. Protobuf serializes your data into a highly compressed **binary** format. It's much smaller over the network and incredibly fast to serialize/deserialize.
-- **HTTP/2 instead of HTTP/1.1:** REST generally uses HTTP/1.1, which handles one request at a time per TCP connection. gRPC uses HTTP/2, which allows multiplexing (sending hundreds of requests simultaneously over a single connection) and supports bidirectional streaming.
-- **Strict Contracts:** In REST, you just hope the other service sends the JSON structure you expect. In gRPC, you define a strict contract using a `.proto` file. Both the Go client and the Go server generate their code from this exact same file. If the contract changes, the code won't compile, saving you from nasty runtime bugs.
+```mermaid
+flowchart TB
+    subgraph rest ["REST / HTTP 1.1"]
+        direction TB
+        R1["Data format: JSON (text, heavy)"]
+        R2["Protocol: HTTP/1.1 (one request per connection)"]
+        R3["Contract: implicit (hope the JSON matches)"]
+        R4["Browser support: native"]
+    end
+
+    subgraph grpc ["gRPC / HTTP 2"]
+        direction TB
+        G1["Data format: Protobuf (binary, compact)"]
+        G2["Protocol: HTTP/2 (multiplexed, bidirectional streaming)"]
+        G3["Contract: strict .proto file (compile-time safety)"]
+        G4["Browser support: requires gRPC-Web proxy"]
+    end
+
+    rest -->|"internal service calls"| grpc
+```
+
+- **Protocol Buffers (Protobuf):** JSON is text-based and requires CPU time to parse. Protobuf serializes data into a highly compressed binary format — smaller on the wire and dramatically faster to serialize/deserialize.
+- **HTTP/2:** REST generally uses HTTP/1.1, which handles one request at a time per TCP connection. HTTP/2 allows multiplexing (hundreds of requests simultaneously over one connection) and bidirectional streaming.
+- **Strict Contracts:** In REST, you hope the other service sends the JSON structure you expect. In gRPC, both sides generate code from the exact same `.proto` file. If the contract changes, the code won't compile — catching bugs at build time instead of runtime.
 
 #### **3. The Protobuf Contract (`.proto`)**
 
-This is the heart of gRPC. It is language-agnostic. You write this file once, and you can generate Go code for your Order service and Python code for your Inventory service, and they will understand each other perfectly.
+This is the heart of gRPC. Write it once; generate Go, Python, Java, or any other language from it.
 
-Here is what a simple contract for our Inventory system looks like:
+```mermaid
+flowchart LR
+    proto["inventory.proto"]
+    proto -->|"protoc --go_out"| GoCode["store.pb.go\nstore_grpc.pb.go"]
+    proto -->|"protoc --python_out"| PythonCode["store_pb2.py\nstore_pb2_grpc.py"]
+    GoCode --> OrderSvc["Order Service (Go client)"]
+    GoCode --> InventorySvc["Inventory Service (Go server)"]
+    PythonCode --> PySvc["Python Service (if needed)"]
+```
 
 ```protobuf
 // inventory.proto
 syntax = "proto3";
 
-// This tells the compiler where to put the generated Go code
 option go_package = "./pb";
 
-// The Request message (like the JSON body)
 message StockRequest {
   string item_id = 1;
 }
 
-// The Response message
 message StockResponse {
   bool in_stock = 1;
 }
 
-// The actual Service definition (the functions you can call)
 service InventoryService {
   rpc CheckStock (StockRequest) returns (StockResponse);
 }
 ```
 
-_(Note: The `= 1` is not the value; it's a unique tag used for the binary compression)._
+> The `= 1` is not a value — it is a unique field tag used by the binary compression algorithm.
 
 ---
 
 ### **Actionable Task for Today**
 
-Since you are using Go, we need to get your machine ready to compile `.proto` files into Go code for tomorrow.
+Get your machine ready to compile `.proto` files into Go code.
 
-1. **Install the Protobuf Compiler (`protoc`):**
-   - Mac (Homebrew): `brew install protobuf`
-   - Windows: Download the zip from the [official releases](https://github.com/protocolbuffers/protobuf/releases), extract it, and add it to your PATH.
+1. **Install the Protobuf compiler (`protoc`):**
+   - Mac: `brew install protobuf`
    - Linux: `sudo apt install -y protobuf-compiler`
-2. **Install the Go plugins for `protoc`:**
-   Run these two commands in your terminal:
+   - Windows: Download from [github.com/protocolbuffers/protobuf/releases](https://github.com/protocolbuffers/protobuf/releases), extract, add to PATH.
+
+2. **Install the Go plugins:**
    ```bash
    go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
    ```
-   _(Make sure your Go `bin` directory is in your system PATH so your terminal can find these plugins!)_
-3. **Write the contract:** In your `day3-sync` folder (or make a new `day4-grpc` folder), create a file named `inventory.proto` and paste the protobuf code from the section above into it.
+
+3. Create `inventory.proto` in a new `day4-grpc` folder and paste the contract from above.
 
 ---
 
 ### **Day 4 Revision Question**
 
-If gRPC is so much faster, uses less bandwidth, and has strict type-safety, why don't we use gRPC for _everything_? For example, why does your browser still use standard HTTP/REST to talk to a website's backend, instead of gRPC?
+If gRPC is so much faster, uses less bandwidth, and enforces type safety, why don't we use it for _everything_? Why does your browser still use HTTP/REST instead of gRPC?
 
-**Think about how browsers work versus how backend servers work. Let me know your answer, and we'll move on to Day 5, where we will actually write the gRPC code in Go!**
+**Answer:** It comes down to how JavaScript works inside the browser. gRPC relies on a feature of HTTP/2 called **Trailers** — headers sent at the very _end_ of a response rather than the beginning. Browsers do not expose a way for JavaScript (`fetch()` or `XMLHttpRequest`) to read trailing headers. Since JS can't read the trailers, it cannot determine whether a gRPC call succeeded or failed.
 
-**Answer:** it's about how JavaScript works inside the browser. gRPC relies heavily on a feature of HTTP/2 called **"Trailers"** (which are basically HTTP headers sent at the very _end_ of a response, instead of the beginning). Browsers simply do not expose a way for JavaScript (like `fetch()` or `XMLHttpRequest`) to read these trailing headers. Because JS can't read the trailers, it can't understand if the gRPC call succeeded or failed.
-
-_(Side note: If you ever absolutely need your web frontend to talk to a gRPC backend, you have to use a tool called `gRPC-Web`, which acts as a translator proxy between the browser and the server)._
+_(If you absolutely need your web frontend to talk to a gRPC backend, you use a tool called `gRPC-Web`, which acts as a translator proxy between the browser and the server.)_

@@ -1,12 +1,27 @@
 ### **Day 3: RESTful Communication (Writing the Code)**
 
-Today, we are going to build a Synchronous HTTP interaction. We will create two microservices using **Golang** and connect them using Docker Compose.
+Today we build a synchronous HTTP interaction. We will create two Go microservices connected via Docker Compose.
 
-Service A (`Order Service`) will receive a request from a user, and it will synchronously call Service B (`Inventory Service`) via standard HTTP/REST to ask, "Do we have this in stock?"
+Service A (`Order Service`) receives a user request and synchronously calls Service B (`Inventory Service`) via HTTP/REST to ask: "Do we have this in stock?"
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant OrderSvc as Order Service :8080
+    participant InventorySvc as Inventory Service :8081
+
+    User->>OrderSvc: GET /create-order
+    OrderSvc->>InventorySvc: GET /check-stock (5s timeout)
+    alt in stock
+        InventorySvc-->>OrderSvc: { "in_stock": true }
+        OrderSvc-->>User: 200 OK — Order placed
+    else service down
+        InventorySvc--xOrderSvc: timeout / connection refused
+        OrderSvc-->>User: 503 Service Unavailable
+    end
+```
 
 #### **1. The Project Structure**
-
-Create a new folder on your computer called `day3-sync` and set up this exact structure:
 
 ```text
 day3-sync/
@@ -23,15 +38,14 @@ day3-sync/
 
 #### **2. The Inventory Service (Service B)**
 
-This service simply listens for a request and replies with JSON.
-In `inventory/go.mod`, put:
+In `inventory/go.mod`:
 
 ```go
 module inventory
 go 1.21
 ```
 
-In `inventory/main.go`, put:
+In `inventory/main.go`:
 
 ```go
 package main
@@ -45,7 +59,6 @@ import (
 func checkStockHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received stock check request...")
 	w.Header().Set("Content-Type", "application/json")
-	// Hardcoding true for today's example
 	json.NewEncoder(w).Encode(map[string]bool{"in_stock": true})
 }
 
@@ -56,7 +69,7 @@ func main() {
 }
 ```
 
-In `inventory/Dockerfile`, put:
+In `inventory/Dockerfile`:
 
 ```dockerfile
 FROM golang:1.21-alpine
@@ -68,15 +81,14 @@ CMD ["./main"]
 
 #### **3. The Order Service (Service A)**
 
-This service receives a user request and _makes_ an HTTP call to the Inventory Service.
-In `order/go.mod`, put:
+In `order/go.mod`:
 
 ```go
 module order
 go 1.21
 ```
 
-In `order/main.go`, put:
+In `order/main.go`:
 
 ```go
 package main
@@ -96,8 +108,7 @@ type StockResponse struct {
 func createOrderHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("Starting order creation process...")
 
-	// 1. Make a Synchronous HTTP GET request to the Inventory Service
-	// Notice the URL uses "inventory", which Docker will resolve to the other container!
+	// Notice the URL uses "inventory" — Docker resolves this to the other container
 	client := http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get("http://inventory:8081/check-stock")
 
@@ -107,11 +118,9 @@ func createOrderHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// 2. Parse the JSON response
 	var stockResp StockResponse
 	json.NewDecoder(resp.Body).Decode(&stockResp)
 
-	// 3. Respond to the user
 	if stockResp.InStock {
 		w.Write([]byte("Success! Order placed for 1x Millennium Falcon Lego Set.\n"))
 	} else {
@@ -126,7 +135,7 @@ func main() {
 }
 ```
 
-In `order/Dockerfile`, put:
+In `order/Dockerfile`:
 
 ```dockerfile
 FROM golang:1.21-alpine
@@ -137,9 +146,6 @@ CMD ["./main"]
 ```
 
 #### **4. The Docker Compose Glue**
-
-This file spins up both Go applications and puts them on the same virtual network so they can talk to each other.
-In the root `docker-compose.yml`, put:
 
 ```yaml
 version: "3.8"
@@ -163,21 +169,21 @@ services:
 
 1. Open your terminal in the `day3-sync` folder.
 2. Run: `docker-compose up --build`
-3. Open a new terminal tab or your web browser and go to: `http://localhost:8080/create-order`
-4. Look at the logs in your Docker terminal. You will see the Order service receive your request, reach out over the Docker network to the Inventory service, get the JSON response, and send the final success message back to you.
+3. Go to: `http://localhost:8080/create-order`
+4. Watch the logs — you'll see the Order Service reach out over the Docker network to the Inventory Service, receive the JSON, and send the final response back to you.
 
 ---
 
 ### **Day 3 Revision Question**
 
-We just built a synchronous system. While your `docker-compose` is running, open a new terminal and run `docker-compose pause inventory`. This simulates the Inventory service crashing or freezing.
+While `docker-compose` is running, open a new terminal and run `docker-compose pause inventory` to simulate the Inventory Service crashing.
 
-Now, try to hit `http://localhost:8080/create-order` again. **What happens, and how does this perfectly demonstrate the main flaw of Synchronous communication we discussed on Day 2?**
+**Hit `http://localhost:8080/create-order` again. What happens, and how does this demonstrate the core flaw of synchronous communication?**
 
-**Output:** `Failed to reach Inventory Service: Get "http://inventory:8081/check-stock": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`
+**Output:** `Failed to reach Inventory Service: context deadline exceeded (Client.Timeout exceeded while awaiting headers)`
 
-**Explanation:** Because the `Order Service` is actively waiting for a response, if the `Inventory Service` is down (or paused), the whole operation fails and returns "Service Unavailable." This is the ultimate flaw of synchronous communication: **Temporal Coupling**. Both services must be alive, healthy, and fast at the exact same moment for the system to work.
+**Explanation:** Because the Order Service actively waits for a response, if the Inventory Service is down or paused, the entire operation fails with "Service Unavailable." This is the essence of **Temporal Coupling** — both services must be alive, healthy, and fast at the exact same moment.
 
-If your system has 5 microservices that call each other synchronously, and each one has a 99% uptime guarantee, your overall system uptime drops to about 95% (0.99 ^ 5).
+If your system has 5 services calling each other synchronously, each with 99% uptime, your overall system availability drops to approximately 95% (0.99⁵).
 
-But for things like checking inventory during checkout, we often _have_ to be synchronous. So, if we are forced to be synchronous, how do we make it faster and more efficient than standard HTTP/REST?
+But for things like checking inventory during checkout, we are often _forced_ to be synchronous — which raises the question: if we must be synchronous, how do we make it faster and more efficient than HTTP/REST?
