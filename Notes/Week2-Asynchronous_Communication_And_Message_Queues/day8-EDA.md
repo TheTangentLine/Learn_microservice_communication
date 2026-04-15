@@ -2,64 +2,79 @@
 
 ### **Day 8: Intro to Event-Driven Architecture (EDA)**
 
-Today, we are shifting our entire mental model. In Week 1, our services were bossy. The Order Service told the Inventory Service, _"Check this stock right now and give me the answer."_ In Week 2, our services become gossips. The Order Service will simply announce to the world, _"Hey everyone, an order was just placed!"_ and it doesn't care who is listening or what they do with that information.
+Today we shift our entire mental model. In Week 1, our services were **bossy** — the Order Service told the Inventory Service, "Check this stock right now and give me the answer." In Week 2, our services become **gossips** — the Order Service simply announces, "Hey everyone, an order was just placed!" and moves on without caring who is listening or what they do with it.
 
 #### **1. The Core Concepts of EDA**
 
-Event-Driven Architecture is built on two massive benefits:
-
-- **Temporal Decoupling:** As you noted, the services don't need to be alive at the same time. If the Inventory Service goes down for 5 minutes, the Order Service keeps taking orders and dropping messages into the queue. The queue holds them safely until the Inventory Service wakes up and processes the backlog.
-- **Spatial Decoupling:** The Order Service no longer needs to know the IP address or DNS name of the Inventory Service (like we hardcoded in Week 1). It only needs to know where the Message Broker is.
+- **Temporal Decoupling:** Services don't need to be alive at the same time. If the Inventory Service goes down for 5 minutes, the Order Service keeps accepting traffic and dropping messages into the queue. When Inventory comes back, it processes the backlog.
+- **Spatial Decoupling:** The Order Service no longer needs to know the IP address or DNS name of the Inventory Service. It only needs to know where the Message Broker is.
 
 #### **2. Commands vs. Events**
 
-This is the most common stumbling block for developers learning async systems. You must understand the difference in language and intent:
+This is the most common stumbling block when learning async systems.
 
-- **A Command (What we did in Week 1):** \* **Naming:** Imperative verbs (`UpdateInventory`, `ChargeCreditCard`).
-  - **Intent:** You want a specific action to happen, and you usually expect a response or confirmation. If it fails, the sender cares.
-- **An Event (What we are doing now):**
-  - **Naming:** Past-tense verbs (`OrderPlaced`, `PaymentSucceeded`, `UserRegistered`).
-  - **Intent:** It is an immutable fact. Something _already happened_ in the past. The sender (Producer) publishes this fact to the broker and immediately forgets about it. The receivers (Consumers) decide if they care about that fact.
+| | Command | Event |
+|---|---|---|
+| **Example naming** | `UpdateInventory`, `ChargeCreditCard` | `OrderPlaced`, `PaymentSucceeded` |
+| **Intent** | A directive — do this specific thing | An immutable fact — something already happened |
+| **Sender expectation** | Expects a response or confirmation | Fire-and-forget; doesn't care who listens |
 
-#### **3. The Trade-off: Eventual Consistency**
+#### **3. The Pub/Sub Pattern**
 
-We trade the risk of the system crashing for the reality of **Eventual Consistency**.
-When a user clicks "Buy," the Order Service instantly returns "Success! Your order is processing." But the inventory hasn't actually been deducted yet. It _will_ be deducted eventually (usually within milliseconds), but for a brief moment, your database is technically out of sync with reality.
+```mermaid
+flowchart LR
+    User["User"]
+    Gateway["API Gateway"]
+    OrderSvc["Order Service\n(Producer)"]
+    Broker["Message Broker"]
+    InventorySvc["Inventory Service\n(Consumer)"]
+    EmailSvc["Email Service\n(Consumer)"]
+
+    User -->|"POST /buy"| Gateway
+    Gateway -->|"HTTP"| OrderSvc
+    OrderSvc -->|"save Pending order"| DB[("orders DB")]
+    OrderSvc -->|"publish OrderPlaced"| Broker
+    OrderSvc -->|"202 Accepted"| Gateway
+    Gateway -->|"202 Accepted"| User
+
+    Broker -->|"copy of OrderPlaced"| InventorySvc
+    Broker -->|"copy of OrderPlaced"| EmailSvc
+
+    InventorySvc -->|"deduct stock"| InventoryDB[("inventory DB")]
+    EmailSvc -->|"send thank-you email"| Email["SMTP"]
+```
+
+Notice: you added the Email Service without changing a single line of the Order Service code. **That is the magic of EDA.**
+
+#### **4. The Trade-off: Eventual Consistency**
+
+We trade the risk of cascading failures for **eventual consistency**. When a user clicks "Buy," the Order Service instantly returns "Success! Your order is processing." The inventory hasn't been deducted yet — it _will_ be, usually within milliseconds — but for a brief moment the system is technically out of sync.
 
 ---
 
 ### **Actionable Task for Today**
 
-No coding today. Let's design the architecture we will build over the next few days.
-Grab your notepad and map out a **Publish/Subscribe (Pub/Sub)** flow:
+No coding today. Map out the Pub/Sub flow above on paper:
 
-1.  **The Producer:** The User hits the API Gateway -> Order Service. The Order Service saves a "Pending" order to its own database.
-2.  **The Event:** The Order Service publishes an `OrderPlaced` event (containing the `item_name` and `user_id`) to a Message Broker.
-3.  **The Consumers:** Draw **two** separate services listening to the broker:
-    - `Inventory Service`: Hears the event, deducts stock.
-    - `Email Service`: Hears the _exact same event_, sends a "Thank you for your order" email to the user.
-
-Notice how we added an Email Service without having to touch or update the Order Service code at all! That is the magic of EDA.
+1. **Producer:** User hits the API Gateway → Order Service saves a "Pending" order to its own DB.
+2. **Event:** Order Service publishes `OrderPlaced` (containing `item_name` and `user_id`) to a broker.
+3. **Consumers:** Draw two separate services — `Inventory Service` (deduct stock) and `Email Service` (send confirmation).
 
 ---
 
 ### **Day 8 Revision Question**
 
-Eventual consistency creates interesting business challenges.
+Imagine only **1** Nakroth skin is left in stock. User A and User B both click "Buy" at the exact same moment. The Order Service accepts both orders asynchronously and tells both users "Success!" When the Inventory Service reads those events a moment later, it realizes it only has 1 skin for 2 buyers.
 
-Imagine there is only **1** Nakroth skin left in stock.
-User A and User B both click "Buy" at the exact same moment.
-Because our Order Service is now fully asynchronous, it instantly accepts _both_ orders, publishes two `OrderPlaced` events to the queue, and tells both users "Success!"
+**How does a real-world async system like Amazon handle this scenario?**
 
-When the Inventory Service reads those events from the queue a millisecond later, it realizes it only has 1 skin for 2 buyers. **In a real-world asynchronous system like Amazon, how do you handle this scenario where you accidentally accepted an order you can't fulfill?** Let me know your thoughts, and we will move on to Day 9 and spin up RabbitMQ in Docker!
+**Answer: Compensating Transactions**
 
-**Answer:**
-**The "Amazon Way" (Compensating Transactions)**
-In the real world, Amazon takes a business-first approach. They don't make you wait on a loading spinner. They instantly tell you "Success!" and close the connection.
-If the Inventory Service later realizes the item is gone, it publishes a new event: `OrderFailed`.
-Other services listen to this to execute a **Compensating Transaction**:
+Amazon takes a business-first approach — they don't make you wait on a loading spinner. They accept the order instantly.
 
-1. The `Payment Service` catches it and issues a refund.
-2. The `Email Service` catches it and sends you an email: _"We're so sorry, but the item you ordered is out of stock. We have refunded your card."_
+If the Inventory Service later realizes the item is gone, it publishes a new event: `OrderFailed`. Other services react:
 
-It's better to apologize later than to make 100,000 users stare at a loading screen!
+1. The `Payment Service` issues a full refund.
+2. The `Email Service` sends: _"We're so sorry — the item you ordered went out of stock. We've refunded your card."_
+
+It is better to apologize later than to make 100,000 users stare at a loading screen.

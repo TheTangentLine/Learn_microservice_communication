@@ -1,34 +1,50 @@
 ### **Day 9: Message Queues & Brokers**
 
-Today, we are introducing the middleman: **The Message Broker**. Instead of services talking directly to each other, they will leave messages for each other inside this broker.
+Today we introduce the middleman: the **Message Broker**. Instead of services talking directly to each other, they leave messages for each other inside this broker.
 
 #### **1. What is a Message Broker?**
 
 Think of it like a highly efficient post office.
 
-- **Producers:** The services that create messages (e.g., your Order Service).
-- **Consumers:** The services that read messages (e.g., your Inventory Service).
-- **The Broker:** The software running in the middle that securely holds the messages in memory or on disk until the consumers are ready for them.
+- **Producers:** Services that create messages (e.g., the Order Service).
+- **Consumers:** Services that read messages (e.g., the Inventory Service).
+- **The Broker:** The software in the middle that holds messages in memory or on disk until consumers are ready for them.
 
 #### **2. Point-to-Point vs. Publish/Subscribe**
 
-There are two main ways to use a broker:
+```mermaid
+flowchart TB
+    subgraph p2p ["Point-to-Point (Work Queue)"]
+        direction LR
+        P1["Producer"] -->|"1 message"| Q1[/"Queue"/]
+        Q1 -->|"processed by exactly one"| W1["Worker A"]
+        Q1 -.->|"idle"| W2["Worker B"]
+        Q1 -.->|"idle"| W3["Worker C"]
+    end
 
-- **Point-to-Point (Work Queues):** One producer sends a message, and exactly _one_ consumer processes it. If you have 5 instances of an Image Processing Service listening to the queue, they will round-robin the work. This is great for load balancing heavy tasks.
-- **Publish/Subscribe (Pub/Sub):** One producer sends a message, and _multiple_ different services receive a copy of that exact same message. This is what we mapped out yesterday (Inventory and Email both reacting to the same `OrderPlaced` event).
+    subgraph pubsub ["Publish / Subscribe (Fanout)"]
+        direction LR
+        P2["Producer"] -->|"1 message"| E1[/"Exchange"/]
+        E1 -->|"copy"| C1["Inventory Service"]
+        E1 -->|"copy"| C2["Email Service"]
+        E1 -->|"copy"| C3["Analytics Service"]
+    end
+```
+
+- **Point-to-Point (Work Queues):** One producer sends a message; exactly _one_ consumer processes it. If you have 5 instances of an Image Processing Service, they round-robin the work. Great for load balancing heavy tasks.
+- **Publish/Subscribe (Pub/Sub):** One producer sends a message; _multiple_ different services each receive a copy. This is what we designed yesterday — Inventory and Email both react to the same `OrderPlaced` event.
 
 #### **3. Introducing RabbitMQ**
 
-RabbitMQ is one of the most widely used, battle-tested open-source message brokers in the world. It implements a protocol called **AMQP** (Advanced Message Queuing Protocol). It is exceptionally good at complex routing—making sure the right messages go to exactly the right queues.
+RabbitMQ is one of the most widely used, battle-tested open-source message brokers. It implements **AMQP** (Advanced Message Queuing Protocol) and excels at complex routing — ensuring the right messages go to exactly the right queues.
 
 ---
 
 ### **Actionable Task for Today**
 
-Today, we are going to spin up a RabbitMQ server locally using Docker Compose, and we'll access its management UI to see how it works visually.
+Spin up RabbitMQ locally using Docker Compose and explore its management UI.
 
-1. Create a new folder for Week 2: `week2-async`
-2. Create a `docker-compose.yml` file and paste this inside:
+1. Create `week2-async/docker-compose.yml`:
 
 ```yaml
 version: "3.8"
@@ -37,34 +53,30 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: rabbitmq-broker
     ports:
-      # Port for our Go/Python code to connect to
-      - "5672:5672"
-      # Port for the web-based Management UI
-      - "15672:15672"
+      - "5672:5672"    # AMQP — your Go/Python code connects here
+      - "15672:15672"  # Web management UI
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
 ```
 
-3. Open your terminal in that folder and run: `docker-compose up -d`
-4. Open your web browser and go to `http://localhost:15672`.
-5. Log in with the username **guest** and password **guest**.
-
-Take a few minutes to click around the UI. You will see tabs for **Connections**, **Channels**, **Exchanges**, and **Queues**. They are empty right now, but tomorrow we are going to write the code to fill them up!
+2. Run: `docker-compose up -d`
+3. Open: `http://localhost:15672` — log in with `guest` / `guest`.
+4. Click through the **Connections**, **Channels**, **Exchanges**, and **Queues** tabs. They are empty now, but tomorrow's code will fill them up.
 
 ---
 
 ### **Day 9 Revision Question**
 
-Look at the `docker-compose.yml` file we just created. We exposed port `5672` for our code, and port `15672` for the UI.
-
-If we were deploying this RabbitMQ container to a production cloud environment (like AWS or Kubernetes), why would it be a massive security risk to expose port `15672` to the public internet, and how should an infrastructure engineer allow their team to access that UI safely?
+We exposed port `15672` for the RabbitMQ UI. In a production cloud environment, why would this be a massive security risk — and how should teams access it safely?
 
 **Answer:**
 
-You put the RabbitMQ container (and all your databases) inside a **Private Subnet** so it has no public IP address and is completely invisible to the internet.
+**The Risk:**
+1. Default credentials like `guest`/`guest` are notoriously left unchanged.
+2. If a hacker gains access to the RabbitMQ UI, they can see every queue, exchange, and service name in your backend — a complete treasure map of your architecture.
 
-To answer the other half of the question (why it's a risk and how the team gets in):
-
-1. **The Risk:** Default credentials (like `guest`/`guest`) are notoriously left unchanged. Furthermore, if a hacker gets access to your RabbitMQ UI, they can see the exact names of all your microservices, queues, and databases—it's basically a treasure map of your entire backend.
-2. **The Access:** If it's in a private subnet, how do _you_ look at the UI? Infrastructure engineers usually set up a **VPN** (so your laptop acts like it's inside the private network) or use a **Bastion Host / Jump Box** (a highly secured server in a public subnet that you SSH into, and from there, you tunnel into the private subnet).
+**The Fix:**
+Place the RabbitMQ container inside a **Private Subnet** so it has no public IP address and is invisible to the internet. Teams access it via:
+- A **VPN**, so your laptop acts as if it's inside the private network.
+- A **Bastion Host / Jump Box** — a hardened server in the public subnet that you SSH into, and from there tunnel into the private subnet.

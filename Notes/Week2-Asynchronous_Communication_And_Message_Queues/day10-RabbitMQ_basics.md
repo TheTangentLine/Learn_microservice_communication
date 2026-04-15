@@ -1,30 +1,47 @@
 ### **Day 10: RabbitMQ Basics (Writing the Code)**
 
-Today, we are going back to writing code. We will write a Producer (which sends a message) and a Consumer (which reads the message) using Go.
+Today we write a Producer (sends a message) and a Consumer (reads a message) using Go and the AMQP protocol.
 
-#### **1. The AMQP Protocol**
+#### **1. The AMQP Connection Steps**
 
-RabbitMQ uses a protocol called AMQP. To use it, you always follow these steps:
+Every interaction with RabbitMQ follows this sequence:
 
-1. **Connect:** Open a TCP connection to the RabbitMQ server.
-2. **Channel:** Open a lightweight "Channel" inside that TCP connection (this saves resources so you don't need a new TCP connection for every thread).
-3. **Declare:** Declare the Queue. (You do this in _both_ the producer and the consumer because you never know which service will start up first!).
-4. **Publish/Consume:** Send or read the data.
+```mermaid
+sequenceDiagram
+    participant Producer
+    participant RabbitMQ
+    participant Consumer
+
+    Producer->>RabbitMQ: Connect (TCP)
+    Producer->>RabbitMQ: Open Channel
+    Producer->>RabbitMQ: QueueDeclare("order_queue")
+    Producer->>RabbitMQ: Publish(message)
+    RabbitMQ-->>Producer: OK
+
+    Consumer->>RabbitMQ: Connect (TCP)
+    Consumer->>RabbitMQ: Open Channel
+    Consumer->>RabbitMQ: QueueDeclare("order_queue")
+    Consumer->>RabbitMQ: Consume(auto-ack: false)
+    RabbitMQ-->>Consumer: Deliver message (unacknowledged)
+    Consumer->>Consumer: process message
+    Consumer->>RabbitMQ: ACK (manual)
+    RabbitMQ->>RabbitMQ: delete message from queue
+```
+
+Both the producer and consumer declare the same queue — because you never know which service starts up first.
 
 #### **2. Project Setup**
-
-Inside your `week2-async` folder, initialize a Go module and install the official RabbitMQ package:
 
 ```bash
 go mod init week2-async
 go get github.com/rabbitmq/amqp091-go
 ```
 
-Create two folders: `producer/` and `consumer/`.
+Create folders: `producer/` and `consumer/`.
 
 #### **3. The Producer Code**
 
-In `producer/main.go`, we will connect to the broker and send a single "OrderPlaced" message.
+In `producer/main.go`:
 
 ```go
 package main
@@ -38,24 +55,21 @@ import (
 )
 
 func main() {
-	// 1. Connect to RabbitMQ (Running in our Docker container from Day 9)
 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	if err != nil {
 		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
 	}
 	defer conn.Close()
 
-	// 2. Open a Channel
 	ch, err := conn.Channel()
 	if err != nil {
 		log.Fatalf("Failed to open a channel: %v", err)
 	}
 	defer ch.Close()
 
-	// 3. Declare a Queue to ensure it exists
 	q, err := ch.QueueDeclare(
 		"order_queue", // name
-		false,         // durable (does it survive a broker restart?)
+		false,         // durable
 		false,         // delete when unused
 		false,         // exclusive
 		false,         // no-wait
@@ -65,17 +79,16 @@ func main() {
 		log.Fatalf("Failed to declare a queue: %v", err)
 	}
 
-	// 4. Publish a message
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	body := "OrderPlaced: User123 bought Nakroth Skin"
 
 	err = ch.PublishWithContext(ctx,
-		"",     // exchange (we will learn this tomorrow)
-		q.Name, // routing key (queue name)
-		false,  // mandatory
-		false,  // immediate
+		"",     // exchange (covered tomorrow)
+		q.Name, // routing key
+		false,
+		false,
 		amqp.Publishing{
 			ContentType: "text/plain",
 			Body:        []byte(body),
@@ -90,7 +103,7 @@ func main() {
 
 #### **4. The Consumer Code**
 
-In `consumer/main.go`, we will connect to the same queue and wait for messages.
+In `consumer/main.go`:
 
 ```go
 package main
@@ -102,48 +115,36 @@ import (
 )
 
 func main() {
-	// 1. Connect to RabbitMQ
 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	if err != nil {
 		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
 	}
 	defer conn.Close()
 
-	// 2. Open a Channel
 	ch, err := conn.Channel()
 	if err != nil {
 		log.Fatalf("Failed to open a channel: %v", err)
 	}
 	defer ch.Close()
 
-	// 3. Declare the exact same Queue (in case Consumer starts before Producer)
 	q, err := ch.QueueDeclare(
-		"order_queue", // name
-		false,         // durable
-		false,         // delete when unused
-		false,         // exclusive
-		false,         // no-wait
-		nil,           // arguments
+		"order_queue",
+		false, false, false, false, nil,
 	)
 	if err != nil {
 		log.Fatalf("Failed to declare a queue: %v", err)
 	}
 
-	// 4. Register a consumer
 	msgs, err := ch.Consume(
-		q.Name, // queue
-		"",     // consumer name
-		true,   // auto-ack (important for tomorrow's question!)
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
+		q.Name,
+		"",
+		true,  // auto-ack — see revision question below!
+		false, false, false, nil,
 	)
 	if err != nil {
 		log.Fatalf("Failed to register a consumer: %v", err)
 	}
 
-	// 5. Read messages forever using a Go channel
 	var forever chan struct{}
 
 	go func() {
@@ -162,58 +163,51 @@ func main() {
 ### **Actionable Task for Today**
 
 1. Ensure your RabbitMQ Docker container from Day 9 is running (`docker ps`).
-2. Open two terminals.
-3. In Terminal 1, start the consumer: `go run consumer/main.go`. It will hang there, listening.
-4. In Terminal 2, run the producer: `go run producer/main.go`.
-5. Watch Terminal 1 instantly print out the message!
-6. **Experiment:** Stop the consumer (CTRL+C). Run the producer 5 times. Open the RabbitMQ web UI (`http://localhost:15672`), click on "Queues", and look at the "order_queue". You will see 5 messages sitting there, waiting patiently. Start the consumer again, and watch it instantly drain all 5 messages. **This is temporal decoupling in action.**
+2. Terminal 1: `go run consumer/main.go` — it will hang, listening.
+3. Terminal 2: `go run producer/main.go`.
+4. Watch Terminal 1 instantly print the message.
+
+**The key experiment:** Stop the consumer (CTRL+C). Run the producer 5 times. Open the RabbitMQ UI, click "Queues," and observe 5 messages sitting safely in `order_queue`. Start the consumer again — watch it drain all 5 instantly. **This is temporal decoupling in action.**
 
 ---
 
 ### **Day 10 Revision Question**
 
-Look closely at step 4 in the Consumer code. There is a parameter called `auto-ack` (auto-acknowledge), which we set to `true`.
+In the Consumer, `auto-ack` is set to `true`. This tells RabbitMQ: "Delete the message from the queue the moment I pull it."
 
-This tells RabbitMQ: "As soon as I pull this message from the queue, delete it from the broker immediately."
+**If our Consumer is a Payment Service, why is `auto-ack: true` dangerous? What happens if our code crashes halfway through charging the credit card?**
 
-**If our Consumer is a payment processing service, why is setting `auto-ack: true` an incredibly dangerous idea? What happens if our code panics/crashes halfway through processing the credit card?**
+**Answer: The Danger of auto-ack (At-Most-Once Delivery)**
 
----
+1. RabbitMQ delivers the "Process Payment $50" message to the worker.
+2. RabbitMQ **instantly deletes** the message from the queue.
+3. The worker starts charging the credit card... and crashes (OOM, server dies).
+4. **Result:** The message is gone forever. The user is never charged, the order is permanently stuck. A disaster.
 
-**Answer:**
+**The Fix: Manual ACKs (At-Least-Once Delivery)**
 
-### **The Danger of `auto-ack: true` (At-Most-Once Delivery)**
+Set `auto-ack: false`. The worker must explicitly tell RabbitMQ "I am completely done — you can delete it now."
 
-If your consumer is a Payment Service and `auto-ack` is true:
+```mermaid
+flowchart TD
+    RMQ["RabbitMQ"]
+    Worker["Payment Worker"]
 
-1. RabbitMQ hands the "Process Payment $50" message to the worker.
-2. RabbitMQ _instantly_ deletes the message from the queue.
-3. The worker starts processing the credit card... and then out of memory (OOM) crashes.
-4. **The result:** The message is gone forever. The user is never charged, and the order is permanently stuck. This is a disaster.
+    subgraph autoack ["auto-ack: true (DANGEROUS)"]
+        direction LR
+        A1["RabbitMQ delivers message"] --> A2["RabbitMQ deletes immediately"]
+        A2 --> A3["Worker crashes mid-charge"]
+        A3 --> A4["Message lost forever"]
+    end
 
-### **The Fix: Manual ACKs (At-Least-Once Delivery)**
+    subgraph manualack ["auto-ack: false (SAFE)"]
+        direction LR
+        M1["RabbitMQ delivers + keeps copy"] --> M2["Worker charges card successfully"]
+        M2 --> M3["Worker sends ch.Ack()"]
+        M3 --> M4["RabbitMQ deletes message"]
+        M1 --> M5["Worker crashes before Ack"]
+        M5 --> M6["RabbitMQ re-queues for another worker"]
+    end
+```
 
-To fix this, we set `auto-ack: false`. The worker must explicitly tell RabbitMQ, _"I am completely done processing this, you can delete it now."_
-
-1. RabbitMQ hands the message to the worker, but keeps a copy safely in the queue (marked as 'unacknowledged').
-2. The worker successfully charges the credit card.
-3. **CRASH!** Right before the worker can send the `ch.Ack()` back over the network, the server loses power.
-
-### **The Idempotency Problem**
-
-Here is where your intuition kicked in. Because RabbitMQ never received the ACK, it assumes the worker died _before_ processing the message.
-RabbitMQ instantly re-queues the message and hands it to **Worker #2**.
-
-If your worker is NOT idempotent, Worker #2 will charge the user's credit card _again_. You just double-charged your customer because of a network blip.
-
-What you referred to as a "race condition" is more accurately called the **Duplicate Message Problem**. In distributed systems, because networks are unreliable (Fallacy #1!), you can never guarantee a message is delivered exactly once. You can only guarantee it is delivered _at least once_.
-
-Therefore, **every consumer must be idempotent.** Idempotent means no matter how many times you apply an operation, the result is the same as applying it once (e.g., `x = 5` is idempotent; `x = x + 5` is not).
-
-### **How to Make a Worker Idempotent**
-
-You handle this in your database using **Idempotency Keys**:
-
-1. Every message must have a unique ID (e.g., `order_id: 999`).
-2. When the Payment Worker receives the message, the _very first thing_ it does is check its own database: `SELECT status FROM payments WHERE order_id = 999`.
-3. If the status is `completed`, the worker says, _"Ah, I already did this!"_ It safely skips the credit card charge, sends the `ACK` to RabbitMQ to clear the duplicate message, and moves on.
+**The Idempotency Problem:** Because RabbitMQ re-queues on crash, a second worker might process the same message and charge the credit card again. This is the **Duplicate Message Problem**. The solution: every consumer must be **idempotent** (covered in detail on Day 11 and Day 13).
