@@ -2,34 +2,52 @@
 
 ### **Day 15: Queues vs. Event Streams (The Paradigm Shift)**
 
-Today, we are shifting from **Message Queues** (RabbitMQ/SQS) to **Event Streams** (Apache Kafka). To understand Kafka, you have to unlearn how RabbitMQ works.
+Today we shift from **Message Queues** (RabbitMQ/SQS) to **Event Streams** (Apache Kafka). To understand Kafka, you must unlearn how RabbitMQ works.
 
 #### **1. The Queue Mindset (Transient)**
 
 - **Analogy:** A To-Do List.
 - **How it works:** You write down a task. A worker reads it, does the job, and crosses it off (deletes it).
-- **The Problem:** Once it's crossed off, it is gone forever. If a new worker joins tomorrow and asks, "What tasks did we do yesterday?", the queue has no idea. The queue is completely empty.
+- **The Problem:** Once it's crossed off, it is gone forever. If a new worker joins tomorrow and asks "What tasks did we do yesterday?", the queue has no idea.
 
 #### **2. The Stream Mindset (Durable & Append-Only)**
 
 - **Analogy:** A Captain's Log or a Diary.
-- **How it works:** Events are written sequentially into an **Append-Only Log** on a hard drive. You can add to the bottom, but you can _never_ delete or modify what is already written.
-- **The Magic:** Because the broker doesn't delete the messages, the broker doesn't care who reads them. Instead, the **Consumers** are responsible for keeping track of their own place in the book using a bookmark called an **Offset**.
+- **How it works:** Events are written sequentially into an **Append-Only Log** on a hard drive. You can add to the bottom but you can never delete or modify what is already written.
+- **The Magic:** Because the broker doesn't delete messages, consumers are responsible for keeping track of their own position using a **Offset** (a bookmark).
+
+```mermaid
+flowchart TB
+    subgraph queue ["Message Queue (RabbitMQ)"]
+        direction LR
+        QP["Producer"] -->|"write task"| QL[/"Queue\n(transient)"/]
+        QL -->|"deliver + DELETE"| QC["Consumer"]
+        QC --> QResult["Message gone forever\nNo replay possible"]
+    end
+
+    subgraph stream ["Event Stream (Kafka)"]
+        direction LR
+        SP["Producer"] -->|"append event"| SL[/"Append-Only Log\n(durable)"/]
+        SL -->|"read at offset N"| SC1["Consumer Group A\n(Inventory)"]
+        SL -->|"read at offset N"| SC2["Consumer Group B\n(Analytics)"]
+        SC1 --> SR1["Advances its own offset"]
+        SC2 --> SR2["Advances its own offset"]
+        SL --> SRetain["Message RETAINED\nReplay anytime"]
+    end
+```
 
 #### **3. Smart Broker vs. Dumb Broker**
 
-- **RabbitMQ is a "Smart Broker / Dumb Consumer."** RabbitMQ does all the heavy lifting. It routes messages, tracks exactly which worker has what, waits for acknowledgments, and deletes the data.
-- **Kafka is a "Dumb Broker / Smart Consumer."** Kafka literally just dumps bytes onto a hard drive as fast as possible. The Consumers have to be smart enough to remember their own offsets and pull the data themselves. Because Kafka does so little work, it can process _millions_ of messages per second, vastly outperforming RabbitMQ in sheer throughput.
+- **RabbitMQ: Smart Broker / Dumb Consumer.** RabbitMQ does all the heavy lifting — routes messages, tracks who has what, waits for ACKs, and deletes the data.
+- **Kafka: Dumb Broker / Smart Consumer.** Kafka just dumps bytes onto a hard drive as fast as possible. Consumers are smart enough to track their own offsets. Because Kafka does so little, it can process _millions_ of messages per second.
 
 ---
 
 ### **Actionable Task for Today**
 
-You will need Docker again, but Kafka is a heavier beast than RabbitMQ.
+Set up the Kafka Docker container you will use for the rest of Week 3.
 
-**1. Create a new folder:** `week3-streaming`
-**2. Create a `docker-compose.yml` file:**
-We will use a modern Kraft-based Kafka image (which removes the need for Zookeeper, an older dependency you might see in older tutorials).
+Create `week3-streaming/docker-compose.yml` using a modern KRaft-based image (no Zookeeper needed):
 
 ```yaml
 version: "3.8"
@@ -50,24 +68,18 @@ services:
       - ALLOW_PLAINTEXT_LISTENER=yes
 ```
 
-Run `docker-compose up -d` to get it downloading and running. Tomorrow, we will connect to it!
+Run `docker-compose up -d`. Tomorrow we will connect to it.
 
 ---
 
 ### **Day 15 Revision Question**
 
-Think about the "Event Stream Mode" in the widget above, where messages are permanently stored on the hard drive.
+Kafka stores every event permanently on hard drives. If Amazon processes 50 million orders a day and Kafka never deletes messages, what eventually happens — and how does Kafka solve this?
 
-If Amazon processes 50 million orders a day, and Kafka never deletes a message when it is read, **what is going to eventually happen to the Kafka server, and how do you think Kafka solves this practical reality?**
+**Answer: Retention Policies (The Sliding Window)**
 
-**Answer:**
+Kafka implements configurable retention to prevent disks from filling up:
 
-"Sliding window" is the exact architectural concept!
-
-If Kafka literally never deleted anything, the hard drives would eventually fill up and the server would crash. To prevent this, Kafka implements a sliding window **Retention Policies**.
-
-Kafka handles this in three ways:
-
-1.  **Time-Based Retention (The Default):** Kafka's default sliding window is **7 days**. As soon as a message is 7 days and 1 second old, Kafka quietly drops it off the back of the log to free up space.
-2.  **Size-Based Retention:** You can tell Kafka, _"I don't care about time, just make sure this topic never exceeds 500GB."_
-3.  **Log Compaction:** This is a special Kafka feature. If your topic is a stream of database updates, Kafka can look at the keys (e.g., `user_123`) and say, _"I have 50 updates for user_123 in this log. I'm going to delete the 49 old ones and only keep the newest one."_ You have the intuition of a senior data engineer. Let's get into the mechanics.
+1. **Time-Based Retention (Default: 7 days):** As soon as a message is 7 days old, Kafka quietly drops it from the back of the log.
+2. **Size-Based Retention:** Limit a topic to a maximum size, e.g., 500 GB. When the limit is hit, the oldest messages are dropped.
+3. **Log Compaction:** For topics representing database state (e.g., user profiles), Kafka keeps only the **most recent event per key**. If there are 50 updates for `user_123`, Kafka deletes the 49 old ones and retains only the latest — giving you the current state without unbounded growth.

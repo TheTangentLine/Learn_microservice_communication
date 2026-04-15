@@ -1,22 +1,48 @@
 ### **Day 21: Week 3 Consolidation Project**
 
-Today, we are building a mini CQRS and Event Sourced architecture. We are going to separate our writes from our reads!
+Today we build a mini CQRS + Event Sourced architecture — separating writes from reads in a live, running system.
 
 #### **The Architecture**
 
-1.  **The Command API (Producer):** Receives HTTP requests to create products and change prices. It does _not_ save to a database. It only publishes events to Kafka.
-2.  **Kafka (The Event Store):** Holds the immutable history of all price changes.
-3.  **The Read API (Consumer + DB):** Listens to Kafka, updates an in-memory map (acting as our NoSQL Query Database), and serves blazing-fast HTTP GET requests to users.
+```mermaid
+flowchart LR
+    Admin["Admin / Postman"]
+
+    subgraph commandSide ["Command Side (Write-Only)"]
+        CmdAPI["Command API\n:8081\nPOST /update-price"]
+        Kafka[/"Kafka\nprice-events topic"/]
+        CmdAPI -->|"publish PriceUpdated event"| Kafka
+    end
+
+    subgraph querySide ["Query Side (Read-Only)"]
+        Consumer["Background\nKafka Consumer"]
+        ReadDB[("In-Memory Map\nRead Model")]
+        QueryAPI["Query API\n:8082\nGET /get-price"]
+        Consumer -->|"update read model"| ReadDB
+        QueryAPI -->|"O(1) lookup"| ReadDB
+    end
+
+    Admin -->|"POST /update-price?item=Nakroth&price=15"| CmdAPI
+    Kafka -->|"consume event"| Consumer
+    Admin -->|"GET /get-price?item=Nakroth"| QueryAPI
+```
+
+**Key insight:** The Command Service never saves to a database directly — Kafka _is_ the database (Event Sourcing). The Query Service builds its own read model from the Kafka stream (CQRS).
 
 #### **1. Project Setup**
 
-Create a new folder: `week3-final`.
-We will reuse the Kafka `docker-compose.yml` from Day 15.
+```text
+week3-final/
+├── docker-compose.yml   # Reuse Kafka config from Day 15
+├── cmd/                 # Command Service (write-only)
+│   └── main.go
+└── query/               # Query Service (read-only)
+    └── main.go
+```
 
 #### **2. The Command Service (Write-Only)**
 
-This service only accepts `POST` requests and writes to Kafka.
-_Create `command/main.go`:_
+In `cmd/main.go`:
 
 ```go
 package main
@@ -36,13 +62,12 @@ func updatePriceHandler(w http.ResponseWriter, r *http.Request) {
 	item := r.URL.Query().Get("item")
 	price := r.URL.Query().Get("price")
 
-	// 1. Create the Event (We are storing the FACT that a price changed)
+	// Store the FACT that the price changed — not the price itself
 	eventPayload := fmt.Sprintf(`{"item": "%s", "new_price": "%s"}`, item, price)
 
-	// 2. Publish to Kafka (Event Sourcing)
 	err := writer.WriteMessages(context.Background(),
 		kafka.Message{
-			Key:   []byte(item), // Keep events for the same item in order!
+			Key:   []byte(item), // Keep events for the same item ordered
 			Value: []byte(eventPayload),
 		},
 	)
@@ -70,8 +95,7 @@ func main() {
 
 #### **3. The Query Service (Read-Only)**
 
-This service runs a Kafka Consumer in the background to build its database, and exposes an HTTP `GET` endpoint for the frontend.
-_Create `query/main.go`:_
+In `query/main.go`:
 
 ```go
 package main
@@ -86,7 +110,7 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// This map acts as our lightning-fast "Read Database" (like Redis or Elasticsearch)
+// Acts as our lightning-fast Read Database (like Redis or Elasticsearch)
 var readDatabase = make(map[string]string)
 
 type PriceEvent struct {
@@ -94,7 +118,6 @@ type PriceEvent struct {
 	NewPrice string `json:"new_price"`
 }
 
-// 1. The HTTP GET Endpoint (Lightning fast, no complex SQL joins)
 func getPriceHandler(w http.ResponseWriter, r *http.Request) {
 	item := r.URL.Query().Get("item")
 	price, exists := readDatabase[item]
@@ -106,12 +129,11 @@ func getPriceHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(fmt.Sprintf("Current price of %s is $%s\n", item, price)))
 }
 
-// 2. The Background Event Consumer
 func buildReadModel() {
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  []string{"localhost:9092"},
-		GroupID:  "query-service-group",
-		Topic:    "price-events",
+		Brokers: []string{"localhost:9092"},
+		GroupID: "query-service-group",
+		Topic:   "price-events",
 	})
 	defer reader.Close()
 
@@ -122,7 +144,6 @@ func buildReadModel() {
 			var event PriceEvent
 			json.Unmarshal(m.Value, &event)
 
-			// Update our Query Database based on the event!
 			readDatabase[event.Item] = event.NewPrice
 			log.Printf("Read Model Updated: %s is now $%s", event.Item, event.NewPrice)
 		}
@@ -130,7 +151,7 @@ func buildReadModel() {
 }
 
 func main() {
-	// Start the Kafka consumer in a background Goroutine
+	// Kafka consumer runs in the background
 	go buildReadModel()
 
 	http.HandleFunc("/get-price", getPriceHandler)
@@ -144,25 +165,34 @@ func main() {
 ### **Actionable Task for Today**
 
 1. Make sure your Kafka container is running.
-2. Open Terminal 1: Run the Query Service `go run query/main.go`.
-3. Open Terminal 2: Run the Command Service `go run command/main.go`.
-4. Open Terminal 3 (or your browser) and test the CQRS flow:
-   - First, try to read: `curl http://localhost:8082/get-price?item=Nakroth` (Returns "Item not found").
-   - Now, write data via the Command API: `curl -X POST "http://localhost:8081/update-price?item=Nakroth&price=15"`
-   - Watch Terminal 1. You will see the Kafka consumer instantly pick it up and update the in-memory map.
-   - Try reading again from the Query API: `curl http://localhost:8082/get-price?item=Nakroth` (Returns "$15").
+2. Terminal 1: `go run query/main.go`
+3. Terminal 2: `go run cmd/main.go`
+4. Test the full CQRS flow:
+
+```bash
+# First, try to read (not yet in read model)
+curl http://localhost:8082/get-price?item=Nakroth
+# → "Item not found"
+
+# Write via Command API
+curl -X POST "http://localhost:8081/update-price?item=Nakroth&price=15"
+# → "Command Accepted: Nakroth price update queued."
+
+# Watch Terminal 1 — Kafka consumer picks it up immediately
+
+# Read again
+curl http://localhost:8082/get-price?item=Nakroth
+# → "Current price of Nakroth is $15"
+```
 
 ---
 
 ### **End of Week 3 Review & Question**
 
-You have survived the most conceptually difficult week of the roadmap. You now understand how large-scale data platforms like Uber, Netflix, and Amazon handle millions of events securely and quickly.
+You have survived the most conceptually difficult week — distributed streams, Event Sourcing, and CQRS. You now think the way engineers at Uber, Netflix, and Amazon think.
 
-Take a massive breather! Tomorrow, we start **Week 4: Resilience & Distributed Transactions**. We will look at what happens when microservices go rogue and how to clean up the mess.
+**To kick off Week 4, consider this scenario:**
 
-**To kick off Week 4, think about this scenario:**
-You are booking a trip. You have a `Flight Service`, a `Hotel Service`, and a `Rental Car Service`.
-You want to book all three, but it's an "all or nothing" deal. If you can't get the rental car, you want to cancel the flight and the hotel.
+You are booking a trip. You have a `Flight Service`, a `Hotel Service`, and a `Rental Car Service`. You want all three — but it's all-or-nothing. If you can't get the rental car, you must cancel both the flight and the hotel.
 
-In an old monolithic SQL database, you would wrap all three inserts in a `BEGIN TRANSACTION` and `ROLLBACK` if one failed.
-**Because these are now three entirely separate microservices with their own separate databases, how do you handle a "rollback" when the 3rd service fails?**
+In a monolith, you'd wrap all three inserts in a SQL `BEGIN TRANSACTION / ROLLBACK`. **But these are three separate microservices with their own separate databases. How do you handle a "rollback" when the 3rd service fails?**
