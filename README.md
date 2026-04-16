@@ -77,4 +77,16 @@ _Keeping communication reliable and safe when things go wrong._
 
 ---
 
+## Extra — Error Handling & Observability
+
+_How services communicate failures clearly — to clients, to other services, and to engineers debugging at 2am._
+
+| | Topic |
+|---|---|
+| [Extra 1](Notes/Extra-Error_Handling_and_Observability/extra1-error_classification_and_propagation.md) | Error Classification — business errors vs infrastructure errors, and which layer owns each |
+| [Extra 2](Notes/Extra-Error_Handling_and_Observability/extra2-structured_logging_with_trace_ids.md) | Structured Logging — log levels, Trace ID injection, what each layer logs and what it must not |
+| [Extra 3](Notes/Extra-Error_Handling_and_Observability/extra3-go_error_patterns.md) | Go Error Patterns — typed sentinels, `%w` wrapping chains, three-layer handler, Trace middleware |
+
+---
+
 Focus on the **why** behind each pattern. The code is lookable — the mental models are what matter.
