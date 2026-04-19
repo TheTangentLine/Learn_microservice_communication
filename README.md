@@ -6,27 +6,36 @@ A 28-day sprint covering how distributed services talk to each other — synchro
 
 ## How this repo is organized
 
-```text
-README.md                                                     # this file: overview + handbook
-Notes/
-  Week1-Fundamentals_and_Synchronous_communication/
-    README.md                                                 # deep intro: TCP, TLS, HTTP/2, gRPC, Protobuf
-    day1..day7-*.md                                           # daily lessons
-  Week2-Asynchronous_Communication_And_Message_Queues/
-    README.md                                                 # deep intro: AMQP frames, RabbitMQ internals, SQS/SNS
-    day8..day14-*.md
-  Week3-Event_Streaming_and_Advanced_Patterns/
-    README.md                                                 # deep intro: Kafka log format, segments, ISR, CQRS
-    day15..day21-*.md
-  Week4-Resilience_and_Distributed_transactions_and_Security/
-    README.md                                                 # deep intro: saga, outbox, CB, mTLS, traceparent
-    day22..day28-*.md
-  Extra-Error_Handling_and_Observability/
-    README.md                                                 # deep intro: three-layer errors, %w chains, three pillars
-    extra1..extra3-*.md
+```mermaid
+flowchart LR
+    Root["repo root"] --> TopReadme["README.md<br/>overview + handbook"]
+    Root --> NotesDir["Notes/"]
+    NotesDir --> W1["Week 1 — Sync"]
+    NotesDir --> W2["Week 2 — Async"]
+    NotesDir --> W3["Week 3 — Streaming"]
+    NotesDir --> W4["Week 4 — Resilience"]
+    NotesDir --> EX["Extra — Errors + Obs"]
+    W1 --> W1R["README.md<br/>deep intro"]
+    W1 --> W1D["day1 .. day7"]
+    W2 --> W2R["README.md<br/>deep intro"]
+    W2 --> W2D["day8 .. day14"]
+    W3 --> W3R["README.md<br/>deep intro"]
+    W3 --> W3D["day15 .. day21"]
+    W4 --> W4R["README.md<br/>deep intro"]
+    W4 --> W4D["day22 .. day28"]
+    EX --> EXR["README.md<br/>deep intro"]
+    EX --> EXD["extra1 .. extra3"]
 ```
 
-Each Week and Extra folder has its own `README.md` that is a **diagram-first deep dive** — read it before the day notes for that week to get the protocol, internals, and mental models in one place. Then use the day notes to drill into specifics.
+Every folder under `Notes/` has the same shape: one **deep-intro `README.md`** plus the daily lesson files. Read the intro first — it gives you the protocol, internals, and mental models. Then the day notes drill into specifics.
+
+| Folder | Deep intro covers |
+|--------|-------------------|
+| [Week 1 — Sync](Notes/Week1-Fundamentals_and_Synchronous_communication/README.md) | TCP, TLS 1.3, HTTP/1.1 vs HTTP/2 framing, gRPC, Protobuf wire format |
+| [Week 2 — Async](Notes/Week2-Asynchronous_Communication_And_Message_Queues/README.md) | AMQP 0-9-1 frames, RabbitMQ internals, SQS/SNS envelopes, delivery guarantees |
+| [Week 3 — Streaming](Notes/Week3-Event_Streaming_and_Advanced_Patterns/README.md) | Kafka record batches, segments + indexes, ISR, consumer rebalance, CQRS, ES |
+| [Week 4 — Resilience](Notes/Week4-Resilience_and_Distributed_transactions_and_Security/README.md) | Saga, outbox + CDC, circuit breaker, `traceparent`, mTLS, sidecar data path |
+| [Extra — Errors + Obs](Notes/Extra-Error_Handling_and_Observability/README.md) | Three-layer error model, gRPC status, `%w` chains, three pillars |
 
 ---
 
