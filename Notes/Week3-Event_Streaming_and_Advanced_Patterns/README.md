@@ -14,7 +14,7 @@
 
 ```mermaid
 flowchart LR
-    Prod[Producer] -->|key=user_id| Topic{{"Topic: orders (4 partitions)"}}
+    Prod[Producer] -->|key=user_id| Topic["Topic: orders, 4 partitions"]
     Topic --> P0[(P0)]
     Topic --> P1[(P1)]
     Topic --> P2[(P2)]

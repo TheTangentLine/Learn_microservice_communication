@@ -327,7 +327,7 @@ Forward compatibility: unknown fields are skipped, never reused. This is why Pro
 
 ```mermaid
 flowchart LR
-    P[Producer] -->|"basic.publish exchange=ex routing-key=order.created"| Ex{{Exchange: ex (topic)}}
+    P[Producer] -->|"basic.publish exchange=ex routing-key=order.created"| Ex["Exchange: ex, type=topic"]
     Ex -->|"binding: order.*"| Q1[(Queue: inventory)]
     Ex -->|"binding: order.created"| Q2[(Queue: email)]
     Ex -->|"binding: #"| Q3[(Queue: audit)]

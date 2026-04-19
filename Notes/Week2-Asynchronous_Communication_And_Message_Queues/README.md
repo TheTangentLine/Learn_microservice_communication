@@ -14,12 +14,12 @@
 
 ```mermaid
 flowchart LR
-    Order[Order Service] -->|publish| Ex{{"Exchange (topic)"}}
+    Order[Order Service] -->|publish| Ex["Exchange, type=topic"]
     Ex -->|"binding key: order.created"| Q1[(Queue: inventory.order.created)]
     Ex -->|"binding key: order.created"| Q2[(Queue: email.order.created)]
     Q1 --> Inv[Inventory Consumer]
     Q2 --> Email[Email Consumer]
-    Q1 -.->|nack + retry exhausted| DLX{{Dead Letter Exchange}}
+    Q1 -.->|nack + retry exhausted| DLX["Dead Letter Exchange"]
     DLX --> DLQ[(DLQ: inventory.failed)]
 ```
 
