@@ -1,0 +1,26 @@
+/* Constrain mermaid diagrams so large ones don't spill past the page */
+.mermaid {
+    max-width: 100%;
+    overflow-x: auto;
+    font-size: 11px;
+}
+
+.mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Tighten up diagram width on screen so they never exceed the content column */
+.mermaid > svg {
+    display: block;
+    margin: 0 auto;
+}
+
+/* Print: scale down all diagrams so they fit on a single page column */
+@media print {
+    .mermaid svg {
+        max-width: 90%;
+        transform: scale(0.85);
+        transform-origin: top left;
+    }
+}

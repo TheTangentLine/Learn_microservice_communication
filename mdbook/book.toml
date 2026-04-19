@@ -1,0 +1,16 @@
+[book]
+title = "Learn Microservice Communication"
+authors = []
+language = "en"
+src = "."
+
+[build]
+build-dir = "book"
+
+[preprocessor.mermaid]
+command = "/Users/khatruong/.cargo/bin/mdbook-mermaid"
+
+[output.html]
+mathjax-support = false
+additional-js  = ["mermaid.min.js", "mermaid-init.js"]
+additional-css = ["custom.css"]

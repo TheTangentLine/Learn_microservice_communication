@@ -1,0 +1,462 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Deep Intro: Saga, Outbox, Circuit Breakers, mTLS - Learn Microservice Communication</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../../css/general-2459343d.css">
+        <link rel="stylesheet" href="../../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../custom-7319f11c.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex-82d34731.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc-82aa9b70.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Learn Microservice Communication</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="week-4--resilience-distributed-transactions--security-deep-intro"><a class="header" href="#week-4--resilience-distributed-transactions--security-deep-intro">Week 4 — Resilience, Distributed Transactions &amp; Security, Deep Intro</a></h1>
+<p><a href="../../README.html">Back to top README</a></p>
+<h2 id="tldr"><a class="header" href="#tldr">TL;DR</a></h2>
+<ul>
+<li><strong>What you learn:</strong> how to keep a distributed system correct and available when the network, dependencies, and services fail.</li>
+<li><strong>Tools / patterns:</strong> Saga, Transactional Outbox + CDC, Circuit Breakers, Distributed Tracing (W3C <code>traceparent</code>), Service Mesh (Envoy), mTLS, JWTs.</li>
+<li><strong>Mental model:</strong> <strong>failure is the steady state</strong>. Design every call with a budget, a fallback, an audit trail, and a trust boundary.</li>
+</ul>
+<hr>
+<h2 id="architecture-at-a-glance"><a class="header" href="#architecture-at-a-glance">Architecture at a glance</a></h2>
+<pre class="mermaid">flowchart LR
+    Client[Client] --&gt;|JWT| Gateway
+    Gateway --&gt;|"mTLS via sidecar"| Order
+    Order --&gt;|"DB tx: business + outbox"| OrderDB[(Postgres)]
+    OrderDB --&gt; Relay["Outbox relay or Debezium CDC"]
+    Relay --&gt; Bus[(Kafka)]
+    Bus --&gt; Inventory
+    Bus --&gt; Payment
+    Inventory -.-&gt;|"compensation event on failure"| Bus
+    Order --&gt;|"CB-protected gRPC"| Pricing
+    subgraph mesh [Service Mesh data plane]
+      SC1["Envoy sidecar"]
+      SC2["Envoy sidecar"]
+    end
+    Order -.- SC1
+    Inventory -.- SC2
+</pre>
+
+<p>Every line in the diagram has a failure mode. Week 4 is the toolbox to make that explicit and recoverable.</p>
+<hr>
+<h2 id="protocol--byte-level"><a class="header" href="#protocol--byte-level">Protocol / byte level</a></h2>
+<h3 id="w3c-traceparent-header"><a class="header" href="#w3c-traceparent-header">W3C <code>traceparent</code> header</a></h3>
+<p>A single ASCII header propagated on every hop:</p>
+<pre><code class="language-text">traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+             ^^ ^------------------------------- ^---------------- ^^
+             ver trace-id (16 bytes hex, 32 chars) parent-id (8B)  flags (1B)
+</code></pre>
+<ul>
+<li><strong>trace-id</strong> (128-bit) is the identity of the whole request tree.</li>
+<li><strong>parent-id</strong> (64-bit) is this hop’s span ID; the next hop sets it as <code>parent-id</code> for its children.</li>
+<li><strong>flags</strong> bit 0 = <code>sampled</code>. If unset, downstream collectors usually drop the spans.</li>
+<li>The companion <code>tracestate</code> header carries vendor-specific extensions without breaking the standard.</li>
+</ul>
+<h3 id="b3-headers-zipkin--equivalent-meaning-four-headers"><a class="header" href="#b3-headers-zipkin--equivalent-meaning-four-headers">B3 headers (Zipkin) — equivalent meaning, four headers</a></h3>
+<pre><code class="language-text">X-B3-TraceId:      4bf92f3577b34da6a3ce929d0e0e4736
+X-B3-SpanId:       00f067aa0ba902b7
+X-B3-ParentSpanId: 05e3ac9a4f6e3b90
+X-B3-Sampled:      1
+</code></pre>
+<h3 id="jwt-structure"><a class="header" href="#jwt-structure">JWT structure</a></h3>
+<pre><code class="language-text">eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9   // base64url(header)
+.eyJzdWIiOiJ1c2VyXzQyIiwiZXhwIjoxNzAwMDAwMDAwfQ // base64url(payload claims)
+.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c // base64url(signature)
+</code></pre>
+<ul>
+<li>Three dot-separated base64url segments: <strong>header</strong>, <strong>payload</strong>, <strong>signature</strong>.</li>
+<li>Header declares <code>alg</code> (RS256, ES256, etc.) — never trust <code>alg=none</code>.</li>
+<li>Payload claims: <code>iss</code> (issuer), <code>sub</code> (subject), <code>aud</code> (audience), <code>exp</code>, <code>iat</code>, <code>nbf</code>, plus your custom ones.</li>
+<li>Signature is computed over <code>base64url(header) + "." + base64url(payload)</code> with the issuer’s private key. Verifier uses the corresponding public key from JWKS.</li>
+</ul>
+<h3 id="mtls-handshake-additions"><a class="header" href="#mtls-handshake-additions">mTLS handshake additions</a></h3>
+<pre class="mermaid">sequenceDiagram
+    participant C as Client (sidecar)
+    participant S as Server (sidecar)
+    C-&gt;&gt;S: ClientHello (SNI=inventory.svc.cluster.local, ALPN=h2)
+    S-&gt;&gt;C: ServerHello, Certificate (SAN includes spiffe://cluster/ns/default/sa/inventory)
+    S-&gt;&gt;C: CertificateRequest
+    S-&gt;&gt;C: ServerHelloDone (encrypted)
+    C-&gt;&gt;S: Certificate (client cert with SPIFFE SVID)
+    C-&gt;&gt;S: CertificateVerify (proves possession of private key)
+    C-&gt;&gt;S: Finished
+    S-&gt;&gt;C: Finished
+    Note over C,S: Both sides now know each other's SPIFFE identity
+</pre>
+
+<p>In a SPIFFE/Istio world, the SAN URI in the cert is the workload identity. Authorization policies match on this URI, not on IP.</p>
+<hr>
+<h2 id="system-internals"><a class="header" href="#system-internals">System internals</a></h2>
+<h3 id="saga-choreography-vs-orchestration"><a class="header" href="#saga-choreography-vs-orchestration">Saga: choreography vs orchestration</a></h3>
+<pre class="mermaid">sequenceDiagram
+    autonumber
+    participant Order
+    participant Bus as Event Bus
+    participant Payment
+    participant Inventory
+    participant Shipping
+    Note over Order,Shipping: Choreography - each service reacts to events
+    Order-&gt;&gt;Bus: OrderPlaced
+    Payment-&gt;&gt;Bus: PaymentCaptured
+    Inventory-&gt;&gt;Bus: StockReserved
+    Shipping-&gt;&gt;Bus: Shipped
+    Note over Inventory: If StockReserved fails -&gt; publish StockReservationFailed
+    Inventory-&gt;&gt;Bus: StockReservationFailed
+    Payment-&gt;&gt;Bus: PaymentRefunded (compensation)
+    Order-&gt;&gt;Bus: OrderCancelled (compensation)
+</pre>
+
+<pre class="mermaid">sequenceDiagram
+    autonumber
+    participant Orch as Saga Orchestrator
+    participant Payment
+    participant Inventory
+    participant Shipping
+    Note over Orch,Shipping: Orchestration - one brain decides next step
+    Orch-&gt;&gt;Payment: CapturePayment
+    Payment--&gt;&gt;Orch: PaymentCaptured
+    Orch-&gt;&gt;Inventory: ReserveStock
+    Inventory--&gt;&gt;Orch: StockReservationFailed
+    Orch-&gt;&gt;Payment: RefundPayment (compensation)
+    Payment--&gt;&gt;Orch: Refunded
+    Orch-&gt;&gt;Orch: mark saga FAILED
+</pre>
+
+<ul>
+<li><strong>Choreography</strong> = no central coordinator, hard to see end-to-end, easy to add a new participant.</li>
+<li><strong>Orchestration</strong> = one state machine drives the saga, easy to see and to time-out, but the orchestrator becomes a critical service.</li>
+<li>Compensations are <strong>semantic undos</strong>, not transactional rollbacks. <code>RefundPayment</code> is not the inverse of <code>CapturePayment</code> at the DB level; it is a new operation that nets out the effect.</li>
+</ul>
+<h3 id="transactional-outbox--cdc"><a class="header" href="#transactional-outbox--cdc">Transactional Outbox + CDC</a></h3>
+<pre class="mermaid">flowchart LR
+    App[App service] --&gt;|"BEGIN; INSERT order; INSERT outbox; COMMIT"| DB[(Postgres)]
+    DB --&gt;|WAL| LogicalSlot["Logical replication slot"]
+    LogicalSlot --&gt; Debezium
+    Debezium --&gt; Kafka[(Kafka topic)]
+    Kafka --&gt; Inventory
+</pre>
+
+<ul>
+<li>Single DB transaction writes the business row <strong>and</strong> the outbox row. Atomicity is provided by the database, not by a distributed transaction.</li>
+<li>A <strong>relay</strong> (a polling worker) or a <strong>CDC tool</strong> (Debezium tailing the Postgres WAL via a logical replication slot) reads the outbox and publishes to the broker.</li>
+<li>The relay must be <strong>idempotent</strong>: it might publish the same row twice on retry. Consumers dedupe on the outbox row’s <code>event_id</code>.</li>
+</ul>
+<h3 id="circuit-breaker-state-machine"><a class="header" href="#circuit-breaker-state-machine">Circuit breaker state machine</a></h3>
+<pre class="mermaid">stateDiagram-v2
+    [*] --&gt; Closed
+    Closed --&gt; Open : failure ratio over threshold within window
+    Open --&gt; HalfOpen : after cool-down e.g. 30s
+    HalfOpen --&gt; Closed : trial requests succeed
+    HalfOpen --&gt; Open : trial request fails
+</pre>
+
+<p>Counters typically tracked in a rolling window:</p>
+<ul>
+<li><code>total</code>, <code>failures</code>, <code>successes</code>, <code>slowCalls</code>, <code>rejected</code></li>
+<li>Failure ratio = <code>failures / total</code> over the last N seconds or M requests.</li>
+<li>In <code>Open</code>, calls return immediately with a typed error (e.g. <code>ErrCircuitOpen</code>), no socket touched. This is how you stop a slow dependency from eating your goroutines.</li>
+</ul>
+<h3 id="retry-budget-vs-retry-storm"><a class="header" href="#retry-budget-vs-retry-storm">Retry budget vs retry storm</a></h3>
+<pre class="mermaid">flowchart LR
+    A[Service A] --&gt;|retry x3| B[Service B]
+    B --&gt;|retry x3| C[Service C]
+    note["A dead C now causes 1 -&gt; 3 -&gt; 9 attempts at C, amplifying load"]
+</pre>
+
+<ul>
+<li>Retry only the <strong>leaf</strong> call, not at every layer.</li>
+<li>Use a <strong>budget</strong> (e.g. retries cap at 10% of total RPS to a dependency) so retries cannot turn an outage into a thundering herd.</li>
+<li>Always combine retries with <strong>exponential backoff + jitter</strong>: <code>sleep = min(cap, base * 2^attempt) * rand(0.5, 1.5)</code>.</li>
+</ul>
+<h3 id="service-mesh-sidecar-data-path"><a class="header" href="#service-mesh-sidecar-data-path">Service mesh sidecar data path</a></h3>
+<pre class="mermaid">flowchart LR
+    AppOut["App: dial inventory:50051"] --&gt;|iptables REDIRECT| EnvoyOut["Local Envoy sidecar"]
+    EnvoyOut --&gt;|"mTLS, retries, CB, tracing"| EnvoyIn["Remote Envoy sidecar"]
+    EnvoyIn --&gt;|"plain TCP on localhost"| AppIn["Inventory app"]
+</pre>
+
+<ul>
+<li>The app makes a normal plain-TCP call. <code>iptables</code> (or eBPF) redirects it to the local sidecar.</li>
+<li>The sidecar adds mTLS, propagates <code>traceparent</code>, enforces retry/timeout/CB policies, exports metrics.</li>
+<li>Net effect: cross-cutting reliability and security concerns leave application code.</li>
+</ul>
+<hr>
+<h2 id="mental-models"><a class="header" href="#mental-models">Mental models</a></h2>
+<h3 id="compensations-vs-rollbacks"><a class="header" href="#compensations-vs-rollbacks">Compensations vs rollbacks</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>ACID rollback</th><th>Saga compensation</th></tr>
+</thead>
+<tbody>
+<tr><td>Atomic, automatic</td><td>Application-level, explicit</td></tr>
+<tr><td>Restores byte-for-byte state</td><td>Restores <strong>business</strong> invariants</td></tr>
+<tr><td>Hidden from downstream</td><td>Visible: emits a <code>*Cancelled</code> / <code>*Refunded</code> event</td></tr>
+<tr><td>Single resource manager</td><td>Each service is its own resource manager</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="the-dual-write-problem-revisited-and-solved"><a class="header" href="#the-dual-write-problem-revisited-and-solved">The dual-write problem (revisited and solved)</a></h3>
+<p>Week 2 surfaced it; Week 4 fixes it with the outbox. The point is: <strong>never write to two systems and pray</strong>. Pick one system as the source of truth, derive the others.</p>
+<h3 id="zero-trust-between-services"><a class="header" href="#zero-trust-between-services">Zero-trust between services</a></h3>
+<ul>
+<li>Every service authenticates every caller — even within the same cluster.</li>
+<li>Identity = the workload’s certificate (SPIFFE SVID), not its IP.</li>
+<li>Authorization happens at the sidecar (or at the app), based on identity + claim.</li>
+<li>User identity is propagated as a JWT or signed header <strong>on top of</strong> the workload mTLS — never confuse the two.</li>
+</ul>
+<h3 id="blast-radius"><a class="header" href="#blast-radius">Blast radius</a></h3>
+<p>When a dependency fails, what fails with it?</p>
+<ul>
+<li>Without circuit breaker: every caller’s goroutines pile up → callers run out of memory → their callers fail too. <strong>Blast radius = entire request graph</strong>.</li>
+<li>With circuit breaker + bulkhead (separate connection pool per dependency): only the calls to the bad dependency fail fast. <strong>Blast radius = the one feature using it</strong>.</li>
+</ul>
+<hr>
+<h2 id="failure-modes"><a class="header" href="#failure-modes">Failure modes</a></h2>
+<ul>
+<li><strong>No timeout</strong> — one slow dependency stalls the whole service. Always set a deadline.</li>
+<li><strong>Retries without idempotency</strong> — duplicate side effects. Pair every retry policy with an idempotency key on the receiver.</li>
+<li><strong>Saga without compensation for one step</strong> — system stuck in a partial state. Inventory the compensations as carefully as the forward steps.</li>
+<li><strong>Outbox relay falls behind</strong> — events delayed. Alert on outbox table size and oldest-pending-event age.</li>
+<li><strong>CB threshold too low</strong> — flaps open on normal latency spikes. Use percentile-based thresholds and rolling windows.</li>
+<li><strong>JWT verified by string-matching</strong> instead of signature — trivially forgeable. Always verify the signature against the JWKS public key.</li>
+<li><strong>mTLS terminated at the wrong layer</strong> — encryption ends at the load balancer; cluster traffic is plaintext. Push mTLS all the way to the workload (sidecar handles this).</li>
+<li><strong>Trace context dropped at one hop</strong> — traces become disconnected. Audit every client lib to ensure it propagates <code>traceparent</code>.</li>
+</ul>
+<hr>
+<h2 id="day-by-day-links"><a class="header" href="#day-by-day-links">Day-by-day links</a></h2>
+<ul>
+<li><a href="day22-Saga_pattern.html">Day 22 — The Saga Pattern</a></li>
+<li><a href="day23-Transactional_Outbox_pattern.html">Day 23 — Transactional Outbox</a></li>
+<li><a href="day24-Circuit_Breakers_and_retries.html">Day 24 — Circuit Breakers &amp; Retries</a></li>
+<li><a href="day25-observability_and_distributed_tracing.html">Day 25 — Observability &amp; Distributed Tracing</a></li>
+<li><a href="day26-service_mesh_overview.html">Day 26 — Service Mesh</a></li>
+<li><a href="day27-mTLS_and_JWTs.html">Day 27 — mTLS &amp; JWTs</a></li>
+<li><a href="day28-the_final_architecture_review.html">Day 28 — Final Architecture Review</a></li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../../Notes/Week3-Event_Streaming_and_Advanced_Patterns/day21-consolidation_challenge.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../../../Notes/Week4-Resilience_and_Distributed_transactions_and_Security/day22-Saga_pattern.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../../Notes/Week3-Event_Streaming_and_Advanced_Patterns/day21-consolidation_challenge.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../../../Notes/Week4-Resilience_and_Distributed_transactions_and_Security/day22-Saga_pattern.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../../mark-09e88c2c.min.js"></script>
+        <script src="../../searcher-c2a407aa.js"></script>
+
+        <script src="../../clipboard-1626706a.min.js"></script>
+        <script src="../../highlight-abc7f01d.js"></script>
+        <script src="../../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../../mermaid-eefea253.min.js"></script>
+        <script src="../../mermaid-init-e5285e99.js"></script>
+
+
+
+    </div>
+    </body>
+</html>
