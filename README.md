@@ -83,20 +83,20 @@ A 200-byte JSON request becomes ~1 KB on the wire after framing, TLS, IP, and Et
 
 ```mermaid
 quadrantChart
-    title Communication style decision
-    x-axis "Synchronous" --> "Asynchronous"
-    y-axis "Point-to-point" --> "Publish/Subscribe"
-    quadrant-1 "Async + Pub/Sub: Kafka topics, SNS fanout"
-    quadrant-2 "Sync + Pub/Sub: webhooks fanout, GraphQL subscriptions"
-    quadrant-3 "Sync + P2P: REST, gRPC unary"
-    quadrant-4 "Async + P2P: RabbitMQ queue, SQS"
-    "REST call": [0.15, 0.2]
-    "gRPC unary": [0.1, 0.15]
-    "RabbitMQ work queue": [0.7, 0.25]
-    "SQS standard": [0.75, 0.2]
-    "SNS to SQS fanout": [0.85, 0.85]
-    "Kafka topic + 2 CGs": [0.9, 0.9]
-    "Webhook fanout": [0.3, 0.8]
+    title Pick your communication style
+    x-axis Sync --> Async
+    y-axis Point-to-point --> Pub/Sub
+    quadrant-1 Stream / fanout
+    quadrant-2 Broadcast
+    quadrant-3 Request / reply
+    quadrant-4 Work queue
+    REST: [0.15, 0.2]
+    gRPC: [0.1, 0.15]
+    RabbitMQ: [0.7, 0.25]
+    SQS: [0.75, 0.2]
+    SNS+SQS: [0.85, 0.85]
+    Kafka: [0.9, 0.9]
+    Webhooks: [0.3, 0.8]
 ```
 
 - **Sync + P2P** = strongest coupling, simplest mental model. Use for the request hot path where the user is waiting.
