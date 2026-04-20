@@ -283,3 +283,15 @@ Sync calls force you up and to the right: caller and callee must be alive at the
 - [Day 5 — Implementing gRPC in Go](day5-implementing_gRPC.md)
 - [Day 6 — API Gateways](day6-api_gateway.md)
 - [Day 7 — Project: Gateway → Order → Inventory](day7-consolidation_project.md)
+
+---
+
+## Bonus — WebSocket: the persistent sibling of HTTP
+
+Week 1 covers how a client calls a server and waits. But real products also need the **server** to push to the client without being asked — chat, live feeds, collaboration, games. WebSocket is the sibling protocol that handles this, and it still starts with an HTTP handshake, which is why it belongs in the Week 1 bonus track.
+
+- [Bonus 1 — WebSocket fundamentals](bonus1-websocket_fundamentals.md): the `Upgrade` handshake, WS vs SSE vs long polling vs gRPC streaming, when to pick each.
+- [Bonus 2 — WebSocket in Go](bonus2-websocket_in_go.md): connection-as-goroutine mental model, `gorilla/websocket`, hub pattern, ping/pong, auth on upgrade.
+- [Bonus 3 — WebSocket architecture patterns](bonus3-websocket_architecture_patterns.md): horizontal scaling with Redis Pub/Sub, Kafka → relay → Redis → WS for durable real-time, gateway options, combining with gRPC streaming, WSS + JWT + mTLS layering, backpressure and reconnect strategies.
+
+The bonus reinforces and extends the [Day 18 Redis Pub/Sub](../Week3-Event_Streaming_and_Advanced_Patterns/day18-Redis_PubSub.md) fanout pattern — but viewed from the WebSocket side.

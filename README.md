@@ -10,13 +10,15 @@ A 28-day sprint covering how distributed services talk to each other — synchro
 flowchart LR
     Root["repo root"] --> TopReadme["README.md<br/>overview + handbook"]
     Root --> NotesDir["Notes/"]
-    NotesDir --> W1["Week 1 — Sync"]
+    NotesDir --> W1["Week 1 — Sync<br/>+ WebSocket bonus"]
     NotesDir --> W2["Week 2 — Async"]
     NotesDir --> W3["Week 3 — Streaming"]
     NotesDir --> W4["Week 4 — Resilience"]
     NotesDir --> EX["Extra — Errors + Obs"]
+    NotesDir --> AD["Architecture-Design<br/>scenario catalog"]
     W1 --> W1R["README.md<br/>deep intro"]
     W1 --> W1D["day1 .. day7"]
+    W1 --> W1B["bonus1 .. bonus3<br/>WebSocket"]
     W2 --> W2R["README.md<br/>deep intro"]
     W2 --> W2D["day8 .. day14"]
     W3 --> W3R["README.md<br/>deep intro"]
@@ -25,6 +27,10 @@ flowchart LR
     W4 --> W4D["day22 .. day28"]
     EX --> EXR["README.md<br/>deep intro"]
     EX --> EXD["extra1 .. extra3"]
+    AD --> ADR["README.md<br/>index + framework"]
+    AD --> ADC["curriculum-drills/ (10)"]
+    AD --> ADCL["classics/ (15)"]
+    AD --> ADD["domains/ (12)"]
 ```
 
 Every folder under `Notes/` has the same shape: one **deep-intro `README.md`** plus the daily lesson files. Read the intro first — it gives you the protocol, internals, and mental models. Then the day notes drill into specifics.
@@ -36,6 +42,7 @@ Every folder under `Notes/` has the same shape: one **deep-intro `README.md`** p
 | [Week 3 — Streaming](Notes/Week3-Event_Streaming_and_Advanced_Patterns/README.md) | Kafka record batches, segments + indexes, ISR, consumer rebalance, CQRS, ES |
 | [Week 4 — Resilience](Notes/Week4-Resilience_and_Distributed_transactions_and_Security/README.md) | Saga, outbox + CDC, circuit breaker, `traceparent`, mTLS, sidecar data path |
 | [Extra — Errors + Obs](Notes/Extra-Error_Handling_and_Observability/README.md) | Three-layer error model, gRPC status, `%w` chains, three pillars |
+| [Architecture-Design](Notes/Architecture-Design/README.md) | 37 scenario files: curriculum drills, classic "Design X" interview problems, and industry-domain challenges |
 
 ---
 
@@ -139,6 +146,14 @@ _How services call each other directly and wait for a response._
 | [Day 6](Notes/Week1-Fundamentals_and_Synchronous_communication/day6-api_gateway.md) | API Gateways — the single entry point: routing, auth, rate limiting |
 | [Day 7](Notes/Week1-Fundamentals_and_Synchronous_communication/day7-consolidation_project.md) | Project: Gateway → Order Service (HTTP) → Inventory Service (gRPC) |
 
+**Bonus — WebSocket: the persistent sibling of HTTP**
+
+| Bonus | Topic |
+|-------|-------|
+| [Bonus 1](Notes/Week1-Fundamentals_and_Synchronous_communication/bonus1-websocket_fundamentals.md) | WebSocket fundamentals — the `Upgrade` handshake, WS vs SSE vs long polling vs gRPC streaming |
+| [Bonus 2](Notes/Week1-Fundamentals_and_Synchronous_communication/bonus2-websocket_in_go.md) | WebSocket in Go — `gorilla/websocket`, connection-as-goroutine, hub pattern, auth on upgrade |
+| [Bonus 3](Notes/Week1-Fundamentals_and_Synchronous_communication/bonus3-websocket_architecture_patterns.md) | WebSocket architecture patterns — scaling via Redis Pub/Sub, Kafka→Relay→Redis→WS, gateway options, WSS+JWT+mTLS, backpressure |
+
 ---
 
 ## Week 2 — Asynchronous Communication & Message Queues
@@ -170,7 +185,7 @@ _High-throughput streaming and separating reads from writes._
 | [Day 15](Notes/Week3-Event_Streaming_and_Advanced_Patterns/day15-queues_vs_event_streams.md) | Queues vs. Streams — why Kafka's append-only log changes everything |
 | [Day 16](Notes/Week3-Event_Streaming_and_Advanced_Patterns/day16-Apache_Kafka_fundamentals.md) | Kafka Fundamentals — topics, partitions, offsets, consumer groups |
 | [Day 17](Notes/Week3-Event_Streaming_and_Advanced_Patterns/day17-Kafka_in_practice.md) | Kafka in Go — keyed messages, partition assignment, ordering guarantees |
-| [Day 18](Notes/Week3-Event_Streaming_and_Advanced_Patterns/day18-Redis_PubSub.md) | Redis Pub/Sub — ephemeral messaging and the WebSocket notification pattern |
+| [Day 18](Notes/Week3-Event_Streaming_and_Advanced_Patterns/day18-Redis_PubSub.md) | Redis Pub/Sub — ephemeral messaging and the WebSocket notification pattern (see also: [Week 1 WebSocket bonus](Notes/Week1-Fundamentals_and_Synchronous_communication/bonus3-websocket_architecture_patterns.md)) |
 | [Day 19](Notes/Week3-Event_Streaming_and_Advanced_Patterns/day19-CQRS.md) | CQRS — separate write databases from read databases, synced by events |
 | [Day 20](Notes/Week3-Event_Streaming_and_Advanced_Patterns/day20-event_sourcing.md) | Event Sourcing — store events not state; replay to rebuild history |
 | [Day 21](Notes/Week3-Event_Streaming_and_Advanced_Patterns/day21-consolidation_challenge.md) | Project: Command API writes to Kafka; Query Service builds a read model |
@@ -192,6 +207,22 @@ _Keeping communication reliable and safe when things go wrong._
 | [Day 26](Notes/Week4-Resilience_and_Distributed_transactions_and_Security/day26-service_mesh_overview.md) | Service Mesh — move retries, circuit breaking, and tracing out of your code |
 | [Day 27](Notes/Week4-Resilience_and_Distributed_transactions_and_Security/day27-mTLS_and_JWTs.md) | mTLS & JWTs — encrypt service-to-service traffic and propagate user identity |
 | [Day 28](Notes/Week4-Resilience_and_Distributed_transactions_and_Security/day28-the_final_architecture_review.md) | Final Review — full end-to-end architecture for a high-load purchase flow |
+
+---
+
+## Architecture Design Challenges
+
+_A catalog of 37 scenario files for practicing system design with everything the four weeks taught you._
+
+Week 4 Day 28 walks through one complete architecture. The [Architecture-Design folder](Notes/Architecture-Design/README.md) extends that into a much larger catalog of scenarios — each one framed with the same 5-step method (clarify requirements → estimate scale → high-level sketch → deep dives → failure modes), a mermaid architecture diagram, and a revision question with answer.
+
+Three sub-catalogs, each with a different goal:
+
+- [**Curriculum drills** (10 files)](Notes/Architecture-Design/curriculum-drills/) — Each drill pins the spotlight on one pattern from Weeks 1-4 and forces you to argue why that pattern is the right one, not a neighbor. Covers sync stack, work queue, fanout, event streaming, CQRS, event sourcing, saga, outbox, circuit breaker, and multi-region active-active.
+- [**Classics** (15 files)](Notes/Architecture-Design/classics/) — The "Design X" interview canon. URL shortener, Pastebin, rate limiter, notifications, typeahead, Twitter, WhatsApp, Instagram, Uber, Netflix, Drive, Google Docs, YouTube, search, web crawler.
+- [**Domains** (12 files)](Notes/Architecture-Design/domains/) — Industry-specific challenges where domain constraints reshape the architecture. E-commerce Black Friday, fintech payments, gaming matchmaking, ride-sharing, video + CDN, ad-tech RTB, social media, multi-tenant SaaS, logistics, live collaboration, real-time analytics, healthcare.
+
+The [Architecture-Design README](Notes/Architecture-Design/README.md) includes a master index and a cross-scenario pattern matrix — pick the pattern you want to practice, and the matrix shows you every scenario that uses it.
 
 ---
 

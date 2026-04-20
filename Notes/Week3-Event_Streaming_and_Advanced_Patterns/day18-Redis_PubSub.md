@@ -21,6 +21,8 @@ Because it is **unbelievably fast** with incredibly low latency. Use it when his
 
 The most common use of Redis Pub/Sub in microservices: you have 5 instances of a WebSocket Service keeping connections open to 100,000 user browsers. The Order Service finishes an order and publishes to Redis channel `user_123_updates`. All 5 WebSocket servers hear it instantly, but only the one holding the connection for `user_123` forwards the message to the browser — a real-time UI update without a page refresh.
 
+> **See also:** The [Week 1 WebSocket bonus](../Week1-Fundamentals_and_Synchronous_communication/README.md#bonus--websocket-the-persistent-sibling-of-http) covers this exact fanout pattern from the WebSocket side — including the handshake, the Go hub implementation, scaling across servers, and the Kafka → relay → Redis → WS durable variant.
+
 ---
 
 ### **Actionable Task for Today**
