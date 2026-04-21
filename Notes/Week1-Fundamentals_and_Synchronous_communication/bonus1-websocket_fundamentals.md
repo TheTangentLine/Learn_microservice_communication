@@ -20,7 +20,7 @@ sequenceDiagram
     Note over Client,Server: TCP socket is no longer HTTP\nNow: binary WebSocket frames, both directions
     Client->>Server: WS frame: "hello"
     Server->>Client: WS frame: "got it"
-    Server->>Client: WS frame: "event #1"
+    Server->>Client: WS frame: "event 1"
     Note over Server: Server can push anytime
     Client->>Server: WS frame: ping
     Server-->>Client: WS frame: pong
