@@ -67,7 +67,68 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Score submit (match end)**
+
+```mermaid
+sequenceDiagram
+    participant GS as Game Server
+    participant RA as Result API
+    participant K as Kafka match-events
+    participant RE as Rating Engine (Elo/Glicko)
+    participant LB as Redis Sorted Set
+    participant PG as Postgres history
+    participant PS as Redis PS
+    participant WS as WebSocket Hub
+    participant F as Friends online
+
+    GS->>RA: POST /result {match_id, players, scores, inputs_hash}
+    RA->>K: MatchEnded event
+    RA-->>GS: 202
+
+    par consumers
+        K->>RE: consume
+        RE->>RE: compute new ratings (per player)
+        RE->>LB: ZADD leaderboard:global rating user_id
+        RE->>K: RankChanged (if rank crossed thresholds)
+    and
+        K->>PG: append per-player history
+    end
+
+    K->>PS: PUBLISH user:friend RankChanged
+    PS->>WS: deliver
+    WS-->>F: notification "friend overtook you"
+```
+
+**Flow B: Leaderboard read (and friends)**
+
+```mermaid
+sequenceDiagram
+    participant P as Player
+    participant API as Leaderboard API
+    participant LB as Redis sorted set
+    participant FLB as Redis friends leaderboard
+
+    P->>API: GET /leaderboard/top?n=100
+    API->>LB: ZREVRANGE leaderboard:global 0 99 WITHSCORES
+    LB-->>API: top entries
+    API-->>P: 200 ranks
+
+    P->>API: GET /leaderboard/me
+    API->>LB: ZREVRANK user_id + ZSCORE
+    LB-->>API: rank, rating
+    API-->>P: position
+
+    P->>API: GET /leaderboard/friends
+    API->>FLB: ZREVRANGE leaderboard:friends:user 0 -1
+    FLB-->>API: ordered friends
+    API-->>P: friends board
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Matchmaking**
 
@@ -111,7 +172,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Game server crash mid-match.** Match aborted; rating not updated; players refunded entry fee (if ranked mode).
 - **Matchmaker starvation at high rating.** Few opponents exist; widen search or use bots.

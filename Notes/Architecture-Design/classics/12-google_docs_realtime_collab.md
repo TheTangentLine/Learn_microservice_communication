@@ -62,7 +62,42 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant A as User A (browser)
+    participant WA as WS Server 1
+    participant DS as Doc Shard (home for doc X)
+    participant K as Kafka doc-ops
+    participant DB as Spanner snapshots
+    participant PS as Redis PS doc:X
+    participant WB as WS Server 2
+    participant B as User B (browser)
+
+    A->>A: local predictive apply
+    A->>WA: op{insert "the", pos=0, baseVer=10}
+    WA->>DS: route by doc_id
+    Note over DS: OT transform against ops since v10
+    DS->>K: append resolved op (v11)
+    DS->>PS: PUBLISH doc:X resolved_op
+    par broadcast
+        PS->>WA: subscribe
+        WA-->>A: ack (client rebases if transformed)
+    and
+        PS->>WB: subscribe
+        WB-->>B: apply op
+    end
+    par durability
+        K->>DB: periodic snapshot compact
+    end
+
+    Note over A,B: cursor/presence via separate Redis PS channel (ephemeral)
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. The hard part: merging concurrent edits**
 
@@ -109,7 +144,7 @@ Two primary algorithm families:
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Doc shard crash:** ops in-flight may be lost (buffered ones in Kafka are safe). Clients reconnect to the new shard after recovery; any lost ops are re-sent from client.
 - **Network partition:** client queues ops; server continues with other editors. On reunion, queued ops are merged.

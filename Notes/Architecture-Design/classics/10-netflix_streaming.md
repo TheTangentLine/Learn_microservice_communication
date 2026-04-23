@@ -69,7 +69,53 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant A as App
+    participant GW as Zuul Gateway
+    participant U as User Service
+    participant P as Playback Mgr
+    participant OC as Open Connect (edge)
+    participant O as Origin
+    participant K as Kafka view-events
+    participant DB as Cassandra
+
+    A->>GW: browse / login
+    GW->>U: authenticate, load profile
+    U-->>GW: profile + entitlements
+    GW-->>A: home page data
+
+    A->>P: GET manifest (title, device)
+    P->>U: check entitlement + device concurrency
+    P-->>A: signed HLS/DASH manifest (segment URLs)
+
+    loop adaptive bitrate playback
+        A->>OC: GET segment (edge PoP in ISP)
+        alt edge hit
+            OC-->>A: bytes
+        else cold segment
+            OC->>O: fill
+            O-->>OC: bytes
+            OC-->>A: bytes
+        end
+        Note over A: measure throughput -> pick next bitrate
+    end
+
+    A->>K: view events + heartbeat (every ~10s)
+    par
+        K->>DB: persist position (cross-device resume)
+    and
+        K->>P: update concurrency (enforce device limit)
+    and
+        K->>K: fan to Recommendations feature store
+    end
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Open Connect — the CDN inside ISPs**
 
@@ -105,7 +151,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Region outage:** Traffic shifts to healthy region, catalog and user state available from cross-region replica.
 - **CDN cache miss:** Falls through to origin; rare but possible for unpopular long-tail titles.

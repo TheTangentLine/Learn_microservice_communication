@@ -63,7 +63,50 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant D1 as Device A (uploader)
+    participant M as Metadata API
+    participant B as Block Service
+    participant CAS as Content-Addressable Store
+    participant MDB as Metadata DB
+    participant K as Kafka change-events
+    participant N as Notification Service
+    participant PS as Redis Pub/Sub user:U
+    participant D2 as Device B
+
+    D1->>D1: split file into 4MB blocks, hash each
+    D1->>M: POST /upload/init {file, block_hashes}
+    M-->>D1: missing_blocks [list]
+    loop only missing blocks
+        D1->>B: PUT block (resumable)
+        B->>CAS: store by hash (dedup)
+        CAS-->>B: ok
+    end
+    D1->>M: POST /commit {file_id, base_version, blocks}
+    alt base_version matches
+        M->>MDB: INSERT new version row
+        MDB-->>M: committed
+        M->>K: FileChanged{user, file_id, v+1}
+        M-->>D1: 200 {version: v+1}
+    else stale base (conflict)
+        M-->>D1: 409 -> client creates "(conflicted copy)" path
+    end
+
+    K->>N: consume
+    N->>PS: PUBLISH user:U {folder F changed}
+    PS->>D2: notify
+    D2->>M: GET /delta?since=V
+    M-->>D2: changes
+    D2->>B: GET missing blocks (if any)
+    B-->>D2: bytes
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Chunked, content-addressable blocks**
 
@@ -106,7 +149,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Block store down:** uploads fail, but reads of already-cached blocks continue.
 - **Metadata replication lag:** user may not see a file their other device just uploaded for a few seconds.

@@ -77,7 +77,69 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Local write with cross-region replication**
+
+```mermaid
+sequenceDiagram
+    participant U as EU User (home=EU)
+    participant DNS as Geo-DNS
+    participant EU as EU Region Svc
+    participant EUPG as EU Postgres (primary for U)
+    participant EUK as EU Kafka
+    participant MM as MirrorMaker 2
+    participant USK as US Kafka (mirror)
+    participant USProj as US Projector
+    participant USR as US Redis/ES
+
+    U->>DNS: resolve api
+    DNS-->>U: EU region IP
+    U->>EU: POST /tweet
+    EU->>EUPG: INSERT tweet (row owned by EU)
+    EUPG-->>EU: ok
+    EU->>EUK: produce tweet-events.eu
+    EU-->>U: 201 (fast, local)
+
+    EUK->>MM: stream
+    MM->>USK: mirror tweet-events.eu (read-only)
+    USK->>USProj: consume
+    USProj->>USR: update US read model (lag target <2s)
+```
+
+**Flow B: Cross-region read + read-your-write stickiness**
+
+```mermaid
+sequenceDiagram
+    participant US as US Friend
+    participant DNS as Geo-DNS
+    participant USSvc as US Region Svc
+    participant USR as US Redis/ES
+    participant EU as EU Region (home for U)
+    participant EUPG as EU Postgres
+
+    US->>DNS: resolve
+    DNS-->>US: US region
+    US->>USSvc: GET /user/U/timeline
+    USSvc->>USR: lookup replicated tweets
+    alt data present (replication caught up)
+        USR-->>USSvc: timeline
+        USSvc-->>US: 200
+    else miss / strong-read requested
+        USSvc->>EU: proxy read (higher latency)
+        EU->>EUPG: SELECT
+        EUPG-->>EU: rows
+        EU-->>USSvc: data
+        USSvc-->>US: 200 (marked fresh)
+    end
+
+    Note over U,USSvc: if U wrote from EU and re-reads via US, sticky cookie pins next 30s reads to EU; or version cookie forces US to wait/fallback until replicated
+    Note over DNS,USSvc: on EU region failure, geo-DNS reroutes U to nearest healthy region; reads served from replicated model, writes to home may be read-only until recovery
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Routing — where do users land**
 
@@ -133,7 +195,7 @@ When a US user writes via the EU region (unusual, e.g. traveling), the write goe
 
 ---
 
-#### **5. Data Model**
+#### **6. Data Model**
 
 - `users(id, home_region, ...)` — home region is immutable post-signup.
 - Partitioning: `users_partition_by_region` in each region's PG.
@@ -141,7 +203,7 @@ When a US user writes via the EU region (unusual, e.g. traveling), the write goe
 
 ---
 
-#### **6. Pattern Rationale**
+#### **7. Pattern Rationale**
 
 - **Active-active** = each region serves reads AND writes locally. Contrast with active-passive (hot standby), which has simpler consistency but wasted capacity and slower failover.
 - **Entity-home-region** strategy gives strong consistency locally and eventual globally, with no multi-master hellscape.
@@ -149,7 +211,7 @@ When a US user writes via the EU region (unusual, e.g. traveling), the write goe
 
 ---
 
-#### **7. Failure Modes**
+#### **8. Failure Modes**
 
 - **Region loss (full AWS region outage).**
   - Geo-DNS re-routes users to nearest healthy region.

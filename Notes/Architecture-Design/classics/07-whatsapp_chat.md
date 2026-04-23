@@ -67,7 +67,63 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Online delivery (B is connected)**
+
+```mermaid
+sequenceDiagram
+    participant A as User A
+    participant WA as WS Server A
+    participant API as Chat API
+    participant K as Kafka messages
+    participant P as Persister
+    participant DB as Cassandra
+    participant Rel as PS Relay
+    participant PS as Redis Pub/Sub user:B
+    participant WB as WS Server B
+    participant B as User B
+
+    A->>WA: send E2E ciphertext {chat_id, seq}
+    WA->>API: validate
+    API->>K: produce key=chat_id, acks=all
+    K-->>API: committed
+    API-->>A: ack accepted
+    par persistence
+        K->>P: consume
+        P->>DB: INSERT messages_by_chat + inbox_by_user
+    and realtime relay
+        K->>Rel: consume
+        Rel->>PS: PUBLISH user:B payload
+        PS->>WB: subscribed
+        WB-->>B: deliver ciphertext
+        B-->>WB: delivered receipt (same pipeline)
+    end
+```
+
+**Flow B: Offline catch-up on reconnect**
+
+```mermaid
+sequenceDiagram
+    participant B as User B (reconnects)
+    participant WB as WS Server B
+    participant API as Chat API
+    participant DB as Cassandra
+    participant PS as Redis Pub/Sub
+
+    B->>WB: connect + auth
+    WB->>PS: SUBSCRIBE user:B (resumes live)
+    B->>API: GET /messages?since=last_msg_id
+    API->>DB: SELECT inbox_by_user WHERE msg_id > last
+    DB-->>API: stream missing messages (ordered)
+    API-->>B: batch
+    Note over B: client decrypts, renders, sends read receipts
+    B->>WB: receipts via same write pipeline
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. The connection tier**
 
@@ -105,7 +161,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **WS server crash:** clients auto-reconnect to another server. Redis PS subs are re-established. During the gap (seconds), messages accumulate in Kafka; catch-up query fills them in.
 - **Kafka cluster outage (rare):** Chat API rejects new messages; clients retry via their own outbox. No loss.

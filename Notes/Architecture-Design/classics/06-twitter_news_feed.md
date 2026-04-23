@@ -60,7 +60,74 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Tweet write (hybrid fanout)**
+
+```mermaid
+sequenceDiagram
+    participant U as Alice
+    participant TS as Tweet Service
+    participant TDB as Cassandra
+    participant K as Kafka
+    participant F as Fanout Worker
+    participant H as Redis home lists
+    participant CC as Redis celeb cache
+    participant WS as WebSocket Hub
+    participant Fl as Followers online
+
+    U->>TS: POST /tweet
+    TS->>TDB: INSERT tweet
+    TS->>K: publish TweetPosted{tweet_id, author}
+    TS-->>U: 201 {tweet_id}
+    K->>F: consume
+    alt author.followers < 10k (normal)
+        loop for each follower f
+            F->>H: LPUSH home:f tweet_id (LTRIM 800)
+        end
+    else author is celebrity
+        F->>CC: SET celeb:author recent [tweet_id,...]
+        Note over F: skip fanout; pulled at read time
+    end
+    F->>WS: publish user:f "new tweet"
+    WS-->>Fl: push notification
+```
+
+**Flow B: Home timeline read (merge push + celeb pull)**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant GW as API Gateway
+    participant TL as Timeline Service
+    participant H as Redis home:U
+    participant CF as celebs_followed:U
+    participant CC as Redis celeb cache
+    participant R as Ranker (optional)
+    participant TDB as Cassandra
+
+    U->>GW: GET /home
+    GW->>TL: forward
+    par
+        TL->>H: LRANGE home:U 0 200
+        H-->>TL: [tweet_ids]
+    and
+        TL->>CF: SMEMBERS celebs_followed:U
+        CF-->>TL: [celeb_ids]
+        loop per celeb
+            TL->>CC: GET celeb:c recent
+            CC-->>TL: [tweet_ids]
+        end
+    end
+    Note over TL: merge + sort by time (or rank via R)
+    TL->>TDB: MGET tweet bodies
+    TDB-->>TL: tweets
+    TL-->>U: 200 timeline
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Fanout-on-write (push) vs fanout-on-read (pull)**
 
@@ -92,7 +159,7 @@ This avoids writing 1M rows when one celebrity tweets while keeping normal reads
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Celebrity tweet storm** still punishes cache (many followers fetching the celeb's tweets). Cache at edge with aggressive TTLs.
 - **Fanout lag** for a normal user. Acceptable; timeline converges in seconds.

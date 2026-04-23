@@ -68,7 +68,76 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Deposit (append event)**
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant Cmd as Command API
+    participant V as Validator
+    participant ES as Event Store (Kafka)
+    participant BP as Balance Projector
+    participant BR as Balance Redis
+    participant AP as Audit Projector
+    participant S3 as S3 parquet
+    participant HP as History Projector
+    participant PG as Postgres history
+
+    C->>Cmd: Deposit{account, amount, event_id}
+    Cmd->>V: validate (idempotency by event_id, business rules)
+    alt duplicate event_id
+        V-->>Cmd: already applied
+        Cmd-->>C: 200 (idempotent no-op)
+    else accept
+        V->>ES: append DepositMade{account, amount, occurred_at} (key=account)
+        ES-->>V: committed offset
+        Cmd-->>C: 202 accepted
+    end
+
+    par projections (independent consumer groups)
+        ES->>BP: consume
+        BP->>BR: INCRBY balance:account amount
+        BP->>BP: maybe snapshot (every 100 events)
+    and
+        ES->>AP: consume
+        AP->>S3: append parquet (daily partition)
+    and
+        ES->>HP: consume
+        HP->>PG: INSERT history row (for rich queries)
+    end
+```
+
+**Flow B: Read balance (snapshot + tail replay)**
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant Q as Query API
+    participant BR as Balance Redis
+    participant ES as Event Store
+    participant SS as Snapshot store
+
+    C->>Q: GET /balance/:acct
+    Q->>BR: GET balance:acct
+    alt fresh enough
+        BR-->>Q: balance, version
+        Q-->>C: 200
+    else cold / rebuild after bug
+        Q->>SS: load latest snapshot(account, at_offset)
+        SS-->>Q: {balance0, offset0}
+        Q->>ES: replay events WHERE key=acct AND offset>offset0
+        ES-->>Q: tail events
+        Q->>Q: fold -> current balance
+        Q->>BR: SET balance:acct (refill cache)
+        Q-->>C: 200
+    end
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Events, not state, are the truth**
 
@@ -115,7 +184,7 @@ TransferReversed(transfer_id, reason, ...)
 
 ---
 
-#### **5. Data Model**
+#### **6. Data Model**
 
 - Kafka topic `ledger-events`, partitioned by account_id, **long retention (infinite — or backed by S3 tiered storage)**.
 - Event envelope: `{event_id (UUID), account_id, type, payload, schema_version, occurred_at, recorded_at}`.
@@ -123,7 +192,7 @@ TransferReversed(transfer_id, reason, ...)
 
 ---
 
-#### **6. Pattern Rationale**
+#### **7. Pattern Rationale**
 
 - **Event sourcing vs state sourcing.** A normal "balances table" is fastest to query but loses history. ES keeps perfect history at the cost of projection complexity.
 - **In finance, the regulatory, audit, and "explainability" requirements make ES almost mandatory** for ledgers.
@@ -131,7 +200,7 @@ TransferReversed(transfer_id, reason, ...)
 
 ---
 
-#### **7. Failure Modes**
+#### **8. Failure Modes**
 
 - **Command succeeds but projection lags.** User sees their balance update 2s late. Acceptable for a bank app that says "balance updated". Critical flows (can I withdraw $100?) must read from a freshly-up-to-date projection or block until they see the transfer's event applied.
 - **Projection bug.** No panic — events are intact; rebuild the projection.

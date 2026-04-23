@@ -77,7 +77,66 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Product read (cache hit, then miss)**
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant CDN as CDN
+    participant GW as API Gateway
+    participant PS as Product Service
+    participant R as Redis
+    participant Rep as PG Replica
+    participant Rel as Related Svc (gRPC)
+
+    B->>CDN: GET /product/42
+    CDN->>GW: forward (cache miss at CDN)
+    GW->>PS: /product/42
+    PS->>R: GET product:42
+    alt cache hit
+        R-->>PS: JSON
+    else cache miss
+        Note over PS: single-flight to avoid stampede
+        PS->>Rep: SELECT * FROM products WHERE id=42
+        Rep-->>PS: row
+        PS->>R: SET product:42 TTL 5m
+    end
+    PS->>Rel: gRPC GetRelated(42)
+    Rel-->>PS: related ids
+    PS-->>GW: 200 product + related
+    GW-->>B: 200
+```
+
+**Flow B: Admin write (read-after-write guaranteed)**
+
+```mermaid
+sequenceDiagram
+    participant A as Admin
+    participant GW as API Gateway
+    participant PS as Product Service
+    participant Pri as PG Primary
+    participant Rep as PG Replica
+    participant R as Redis
+    participant ES as Elasticsearch
+
+    A->>GW: POST /admin/product/42 {price}
+    GW->>PS: forward
+    PS->>Pri: UPDATE products SET price WHERE id=42
+    Pri-->>PS: committed
+    PS->>R: DEL product:42
+    PS->>ES: PUT /products/42 (dual-write)
+    ES-->>PS: ok
+    PS-->>A: 200
+    Note over PS: next read hits Redis miss -> reads replica (lag ~100ms) or primary fallback if stale
+
+    Pri-->>Rep: streaming replication (async)
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Cache strategy — look-aside with explicit invalidation**
 
@@ -105,7 +164,7 @@ flowchart TB
 
 ---
 
-#### **5. Data Model**
+#### **6. Data Model**
 
 - Postgres: `products(id, sku, name, description, price, stock, updated_at)` + related tables.
 - Elasticsearch: flattened denormalized doc per product.
@@ -113,7 +172,7 @@ flowchart TB
 
 ---
 
-#### **6. Communication Pattern Rationale**
+#### **7. Communication Pattern Rationale**
 
 - **REST at the edge** because clients are browsers (no Protobuf there).
 - **gRPC internally** because inter-service calls are in the user's request path, typed contracts protect against schema drift, and Protobuf payloads save bytes.
@@ -121,7 +180,7 @@ flowchart TB
 
 ---
 
-#### **7. Failure Modes and Tradeoffs**
+#### **8. Failure Modes and Tradeoffs**
 
 - **Redis down** — every read falls through to PG replicas. PG load jumps ~20×. Mitigation: run Redis in cluster mode with replicas; have a circuit breaker between service and Redis so the fallback path works.
 - **PG primary down** — writes fail entirely until failover. Reads continue via replicas. Mitigation: automated failover (patroni, RDS multi-AZ).

@@ -62,7 +62,47 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant P as Producer Service
+    participant L as Partition Leader (broker)
+    participant F1 as Follower ISR 1
+    participant F2 as Follower ISR 2
+    participant G1 as cg-profile consumer
+    participant G2 as cg-recs consumer
+    participant G5 as cg-warehouse consumer
+    participant Off as __consumer_offsets
+
+    P->>L: produce {key=user_id, payload} acks=all, idempotent
+    L->>F1: replicate
+    L->>F2: replicate
+    F1-->>L: ack
+    F2-->>L: ack
+    Note over L: min.insync.replicas=2 satisfied
+    L-->>P: ack offset=N
+
+    par independent consumer groups (read same log)
+        L-->>G1: poll batch [offset M..]
+        G1->>G1: build per-user timeline row
+        G1->>Off: commit offset=M+batch (cg-profile)
+    and
+        L-->>G2: poll batch
+        G2->>G2: update feature store (Redis)
+        G2->>Off: commit (cg-recs, different offset)
+    and
+        L-->>G5: poll batch (may lag hours)
+        G5->>G5: write S3 parquet
+        G5->>Off: commit (cg-warehouse)
+    end
+
+    Note over P,L: replay: new group starts with auto.offset.reset=earliest or seek_to_timestamp; brokers serve from on-disk segments, tiered from S3 if older
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Partitioning by user_id**
 
@@ -96,7 +136,7 @@ flowchart TB
 
 ---
 
-#### **5. Data Model**
+#### **6. Data Model**
 
 ```text
 event = {
@@ -113,7 +153,7 @@ Stored on disk as record batches; compressed with snappy; read via `sendfile(2)`
 
 ---
 
-#### **6. Pattern Rationale**
+#### **7. Pattern Rationale**
 
 - **Kafka, not RabbitMQ.** RabbitMQ is ephemeral-after-ack. Kafka keeps everything for `retention.ms`. Multiple independent consumer groups without double-sending requires the log semantics.
 - **Kafka, not SNS+SQS.** SQS retention is 14 days max and not replayable to a new subscriber from offset 0. Also, partition-level ordering per user is a Kafka-native feature.
@@ -121,7 +161,7 @@ Stored on disk as record batches; compressed with snappy; read via `sendfile(2)`
 
 ---
 
-#### **7. Failure Modes**
+#### **8. Failure Modes**
 
 - **Broker crash.** Partition leader fails over to a follower (ISR). Milliseconds of blip. Producers with `acks=all` have already seen the write on the follower.
 - **Whole AZ lost.** RF=3 spread across AZs → we lose at most 1 replica per partition. Still above `min.insync.replicas=2`.

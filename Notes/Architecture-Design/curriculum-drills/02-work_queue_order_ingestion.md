@@ -78,7 +78,56 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant C as Customer
+    participant OS as Order Service
+    participant DB as Postgres
+    participant Ex as RabbitMQ orders (fanout)
+    participant Qp as queue:payment
+    participant P as Payment Consumer
+    participant Ext as Payment Provider
+    participant DLQ as orders.dlq
+    participant Q26 as other queues (inventory/email/...)
+    participant W as Other Consumers
+
+    C->>OS: POST /order
+    OS->>DB: INSERT order (PENDING)
+    DB-->>OS: committed
+    OS->>Ex: publish OrderPlaced
+    Note over Ex: fanout copies to all bound queues atomically
+    OS-->>C: 202 {order_id}
+
+    par independent consumers
+        Ex->>Qp: route
+        Qp->>P: deliver (prefetch=10, manual ACK)
+        P->>P: check seen(order_id) idempotency
+        P->>Ext: charge
+        alt success
+            Ext-->>P: ok
+            P->>DB: UPDATE order set PAID
+            P->>Qp: ACK
+        else transient error
+            Ext-->>P: 5xx
+            P->>Qp: NACK requeue (x-retry-count++)
+            alt retries > 5
+                Qp->>DLQ: dead-letter
+            end
+        end
+    and
+        Ex->>Q26: route
+        Q26->>W: deliver (inventory, restaurant, driver, email, analytics)
+        W->>W: idempotent work + ACK
+    end
+
+    Note over C,OS: client polls GET /order/:id or WS for status transitions
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Why a fanout exchange, not six separate publishes**
 
@@ -104,7 +153,7 @@ flowchart TB
 
 ---
 
-#### **5. Data Model**
+#### **6. Data Model**
 
 - `orders(id, customer_id, items, total, status, created_at, updated_at)`
 - Each consumer service has its own state, keyed by `order_id`.
@@ -112,14 +161,14 @@ flowchart TB
 
 ---
 
-#### **6. Pattern Rationale**
+#### **7. Pattern Rationale**
 
 - **Why RabbitMQ, not Kafka?** Work queues = one consumer per message. Kafka is for broadcast replay where every consumer group sees every message. Here we want 6 *independent* queues, each with competing consumers. AMQP exchanges + queues model this natively.
 - **Why not sync fanout?** If Order Service called all 6 downstreams synchronously, the slowest one would set the user's latency. Plus: if email is down, does the order fail? No. Email is eventual. RabbitMQ captures that intent.
 
 ---
 
-#### **7. Failure Modes**
+#### **8. Failure Modes**
 
 - **RabbitMQ down.** Orders back up in the Order Service's outbox (if you have one — see [cd-08](08-outbox_inventory_to_many_consumers.md)) or fail closed. Most real setups run Rabbit in a cluster with mirrored queues.
 - **One consumer stuck.** Only its queue grows. Others keep processing. This is the point of the design.

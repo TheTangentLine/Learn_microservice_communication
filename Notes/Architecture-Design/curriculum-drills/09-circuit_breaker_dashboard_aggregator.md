@@ -70,7 +70,80 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Closed breakers (healthy)**
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as Aggregator
+    participant CB1 as CB: revenue
+    participant R as Revenue Svc
+    participant CB2 as CB: orders
+    participant O as Orders Svc
+    participant CBn as CB: ... (10 total)
+    participant Sn as Backend n
+    participant C as Redis last-known-good
+
+    B->>A: GET /dashboard (deadline 1500ms)
+    par fan-out with 800ms per-tile deadline
+        A->>CB1: call (state=CLOSED)
+        CB1->>R: GET /revenue
+        R-->>CB1: value
+        CB1-->>A: value
+        A->>C: SET revenue {value, ts}
+    and
+        A->>CB2: call
+        CB2->>O: GET /orders
+        O-->>CB2: value
+        CB2-->>A: value
+    and
+        A->>CBn: call
+        CBn->>Sn: GET ...
+        Sn-->>CBn: value
+        CBn-->>A: value
+    end
+    A-->>B: 200 composed dashboard
+```
+
+**Flow B: One backend unhealthy -> breaker open, fallback to cache**
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as Aggregator
+    participant CBu as CB: users
+    participant U as Users Svc
+    participant C as Redis last-known-good
+    participant CBo as CB: orders (healthy)
+
+    Note over CBu: rolling window failure ratio > 50% -> state=OPEN
+    B->>A: GET /dashboard
+    par
+        A->>CBu: call
+        CBu-->>A: short-circuit (OPEN)
+        A->>C: GET users tile
+        C-->>A: stale value (2m ago)
+    and
+        A->>CBo: call (CLOSED)
+        CBo->>U: (not called)
+        Note over A,CBo: orders tile fresh
+    end
+    A-->>B: 200 {users=stale-flag, orders=fresh, ...}
+
+    Note over CBu: after cool-down 30s -> HALF-OPEN, admit 1-2 probe calls
+    CBu->>U: probe
+    alt probe success
+        CBu->>CBu: state=CLOSED
+    else probe fails
+        CBu->>CBu: state=OPEN again
+    end
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Parallel fan-out with per-call deadlines**
 
@@ -127,21 +200,21 @@ For a tile that must come back fast: fire two requests to two backend replicas, 
 
 ---
 
-#### **5. Data Model**
+#### **6. Data Model**
 
 - Redis: `dashboard:tile:{name}` → `{value, fetched_at}`, TTL 5 minutes.
 - Aggregator state: breaker counters (in-memory with Prometheus export).
 
 ---
 
-#### **6. Pattern Rationale**
+#### **7. Pattern Rationale**
 
 - **Per-service circuit breaker + bulkheads** is textbook resilience for sync fanout. This is almost exactly the Netflix Hystrix pattern (now implemented in Resilience4j, Envoy, Istio, `gobreaker`, etc.).
 - **Sync fanout is the hard case.** If the dashboard could be async (email me the dashboard), you'd use a pre-computed CQRS read model. But real-time dashboards need sync — and sync needs CBs.
 
 ---
 
-#### **7. Failure Modes**
+#### **8. Failure Modes**
 
 - **One backend slow.** Its breaker opens. Dashboard shows cached tile for that backend. Others unaffected.
 - **Three backends down.** Three tiles cached, seven live. Dashboard still renders < 2s.

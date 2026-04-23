@@ -73,7 +73,90 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Happy checkout (queue -> reserve -> pay -> order)**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant WAF as WAF/Gateway
+    participant Wq as Waiting Room
+    participant WR as Wait Redis
+    participant Ca as Cart Svc
+    participant R as Reservation Svc
+    participant RDB as Redis (stock counters)
+    participant P as Payment Svc (+CB)
+    participant Ext as Provider
+    participant O as Order Svc (+Outbox)
+    participant K as Kafka order-events
+    participant D as Downstream (warehouse/ship/notify)
+
+    U->>WAF: hit sale
+    WAF->>Wq: request token
+    Wq->>WR: enqueue position (ZADD)
+    Wq-->>U: "#1432 in line, ~3 min"
+
+    Note over Wq: periodic admission (top N=5000 active)
+    Wq-->>U: token valid (active)
+    U->>Ca: add to cart (signed token)
+    U->>R: POST /reserve {sku}
+    R->>RDB: EVAL Lua DECR stock:sku + SETEX reserve:user 300
+    alt stock available
+        RDB-->>R: remaining, reservation set (5m TTL)
+        R-->>U: reserved
+        U->>P: pay (Idempotency-Key=order_id)
+        P->>Ext: authorize + capture
+        Ext-->>P: success
+        P->>O: create order
+        O->>O: tx: INSERT order + INSERT outbox(OrderPlaced)
+        O->>K: (relay) publish OrderPlaced
+        O-->>U: 200 confirmed
+        par
+            K->>D: warehouse consume
+        and
+            K->>D: shipping consume
+        and
+            K->>D: notify consume
+        end
+    else out of stock
+        RDB-->>R: -1 (restore) -> sold out
+        R-->>U: 409 out of stock
+    end
+```
+
+**Flow B: Failure / compensation (payment declined or reservation expired)**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant R as Reservation Svc
+    participant RDB as Redis (stock)
+    participant P as Payment Svc
+    participant Ext as Provider
+    participant J as Janitor (cron)
+
+    U->>R: reserve sku -> ok (TTL 5m)
+    U->>P: pay
+    P->>Ext: authorize
+    alt provider declines
+        Ext-->>P: declined
+        P-->>U: 402
+        P->>R: ReleaseStock(sku)
+        R->>RDB: INCR stock:sku (idempotent with reservation tracking)
+    else provider degraded, CB opens
+        Note over P: shift to secondary or pause checkout
+        P-->>U: 503 try again
+    else user abandons
+        Note over RDB: reserve:user TTL expires
+        J->>RDB: scan expired reservations
+        J->>RDB: INCR stock:sku (only if order not completed)
+    end
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. The virtual waiting room**
 
@@ -125,7 +208,7 @@ return remaining
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Redis stock counter node down.** Stock decrements stop for that SKU's shard. Queue pauses for those items. Automatic failover to replica (seconds).
 - **Payment provider outage.** Circuit breaker opens. Either shift to secondary or pause checkout with honest "temporarily unavailable" message.

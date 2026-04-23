@@ -72,7 +72,50 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant D as Driver phone
+    participant DWS as Driver WS
+    participant LA as Location API
+    participant K as Kafka location-pings (key=H3)
+    participant GP as Geo Projector
+    participant GR as Redis (cell sets, driver:loc)
+    participant RP as Ride Projector
+    participant RK as Kafka ride-location (key=ride_id)
+    participant RWS as Rider WS
+    participant R as Rider phone
+    participant Di as Dispatch
+
+    D->>DWS: ping {lat,lng,heading,speed,ts}
+    DWS->>LA: forward (server-stamp ts)
+    LA->>K: produce (partition by H3 cell)
+    LA-->>DWS: ack
+
+    par
+        K->>GP: consume
+        GP->>GR: SADD cell:H3 driver_id; SET driver:id loc TTL 30s
+    and active-ride filter
+        K->>RP: consume
+        RP->>RP: if driver in active ride -> emit
+        RP->>RK: produce keyed by ride_id
+        RK->>RWS: stream
+        RWS-->>R: location frame (client interpolates to 60Hz)
+    end
+
+    Note over D: offline 90s -> local ring buffer -> batch on reconnect
+    D->>DWS: batch[...pings...]
+    DWS->>LA: un-batch, order by ts
+    Note over RP: collapse batch -> send latest + few keyframes to avoid jump
+
+    Di->>GR: kRing(pickup_cell, 3) SMEMBERS -> candidates
+    GR-->>Di: driver_ids
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. H3 hexagonal geo-index**
 
@@ -117,7 +160,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Redis cluster node down.** Cell set unavailable → dispatch queries that cell return no drivers. Failover to replica (seconds).
 - **Kafka partition leader loss.** Producer blocks briefly, pings queued client-side. No data loss.

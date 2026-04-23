@@ -66,7 +66,45 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant A as User A client
+    participant B as User B client
+    participant WS as WebSocket tier
+    participant CS as Canvas Service (sticky shard, CRDT state)
+    participant K as Kafka canvas-ops
+    participant Snap as Snapshotter
+    participant S3 as S3 snapshots
+    participant PR as Redis presence channel
+
+    A->>A: local op (optimistic apply)
+    A->>WS: send op {canvas, shape, lamport_ts}
+    WS->>CS: route by canvas_id
+    CS->>CS: integrate into CRDT (deterministic merge)
+    CS->>K: append op (durability + replay)
+    par broadcast diffs
+        CS-->>B: diff op (B applies)
+    and
+        CS-->>A: ack + canonical ts
+    end
+
+    Note over A,B: presence (cursor/selection) flows separately at 60Hz
+    A->>PR: cursor xy (ephemeral)
+    PR-->>B: cursor xy
+
+    loop periodic
+        K->>Snap: tail ops
+        Snap->>S3: PUT snapshot every N ops / T mins
+    end
+
+    Note over B,CS: on reconnect: B downloads snapshot from S3 then replays ops since snapshot_ts from Kafka -> converges
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. CRDTs for conflict-free merging**
 
@@ -108,7 +146,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Canvas server crash:** clients reconnect to new shard; state rebuilt from snapshot + Kafka replay. 2-10s gap.
 - **Network drop mid-edit:** client keeps editing locally; queues ops. Reconnect → batch upload; CRDT merges.

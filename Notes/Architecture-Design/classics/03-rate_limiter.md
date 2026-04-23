@@ -52,7 +52,42 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant GW as Gateway Pod
+    participant L as Local Bucket
+    participant R as Redis Cluster
+    participant API as Backend API
+
+    C->>GW: request
+    GW->>L: take 1 token
+    alt local tokens available
+        L-->>GW: allowed
+    else need refill from Redis
+        GW->>R: EVAL token_bucket.lua (key={user}:1m, limit, window)
+        Note over R: atomic INCR + EXPIRE
+        alt count <= limit
+            R-->>GW: 1 (allow, refill local)
+            GW->>L: refill
+        else count > limit
+            R-->>GW: 0 (reject)
+            GW-->>C: 429 Too Many Requests
+        end
+    end
+    opt Redis unreachable / >5ms timeout
+        Note over GW: circuit breaker -> fail open or closed per policy
+    end
+    GW->>API: forward (if allowed)
+    API-->>GW: 200
+    GW-->>C: 200
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Algorithm — token bucket via Redis Lua**
 
@@ -95,7 +130,7 @@ return 1      -- allow
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Redis down.** Covered above.
 - **Hot user.** Concentrated traffic on one hash tag → one Redis shard. Mitigate with local caches.

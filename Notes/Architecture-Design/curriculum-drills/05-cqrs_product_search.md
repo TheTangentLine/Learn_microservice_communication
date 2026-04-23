@@ -71,7 +71,63 @@ flowchart LR
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Write (command)**
+
+```mermaid
+sequenceDiagram
+    participant A as Admin
+    participant W as Write API
+    participant PG as Postgres (products + outbox)
+    participant CDC as Debezium Relay
+    participant K as Kafka product-events
+    participant ESS as ES Projection Consumer
+    participant ES as Elasticsearch
+
+    A->>W: PATCH /product/42 {price=19.99}
+    W->>PG: BEGIN
+    W->>PG: UPDATE products SET price, version=v+1
+    W->>PG: INSERT outbox(event_type=ProductUpdated, payload, lsn)
+    W->>PG: COMMIT
+    PG-->>W: ok
+    W-->>A: 200 (pending sync toast)
+
+    PG->>CDC: stream via logical replication slot (WAL)
+    CDC->>K: produce {key=42, version, payload}
+    K->>ESS: consume
+    ESS->>ES: bulk index with version_external=v+1
+    alt incoming version > existing
+        ES-->>ESS: indexed
+    else stale
+        ES-->>ESS: version conflict -> drop
+    end
+```
+
+**Flow B: Read (query)**
+
+```mermaid
+sequenceDiagram
+    participant C as Customer
+    participant Q as Query API
+    participant ES as Elasticsearch
+    participant Cache as Query cache (optional)
+
+    C->>Q: GET /search?q=phone&facet=brand
+    Q->>Cache: GET q-hash
+    alt hot query cached
+        Cache-->>Q: hits + facets
+    else miss
+        Q->>ES: _search + aggs
+        ES-->>Q: hits + aggregations
+        Q->>Cache: SET short TTL
+    end
+    Q-->>C: 200 results (may reflect pre-sync state if admin just wrote)
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Why outbox + CDC instead of dual-write**
 
@@ -99,7 +155,7 @@ flowchart LR
 
 ---
 
-#### **5. Data Model**
+#### **6. Data Model**
 
 - Postgres: `products(id, sku, ...everything...)` + `product_outbox(id, event_type, payload, created_at)`.
 - Kafka topic: `{product_id, version, event_type, payload}`, key = `product_id`, log-compacted.
@@ -107,7 +163,7 @@ flowchart LR
 
 ---
 
-#### **6. Pattern Rationale**
+#### **7. Pattern Rationale**
 
 - **Write and read are optimized independently.** The write side cares about ACID and relations. The read side cares about inverted indexes, facets, fuzzy matching. Forcing both into one DB always compromises one side.
 - **Outbox + CDC** is the rigorous solution to dual-write. Versus manual publish-in-handler: safe against process crash, doesn't require distributed transactions.
@@ -115,7 +171,7 @@ flowchart LR
 
 ---
 
-#### **7. Failure Modes**
+#### **8. Failure Modes**
 
 - **ES down.** Consumer lags. Kafka retention covers the outage. ES comes back, consumer drains.
 - **Debezium relay crashes.** It resumes from last confirmed offset. At-least-once guaranteed by PG WAL positions.

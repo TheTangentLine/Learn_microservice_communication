@@ -74,7 +74,54 @@ flowchart LR
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant Src as App / SDK
+    participant Col as Collector API
+    participant K as Kafka raw-events
+    participant En as Enricher
+    participant Fl as Flink (windowed aggregations)
+    participant Hot as ClickHouse / Druid / Pinot
+    participant Cold as S3 Parquet
+    participant QC as Redis query cache
+    participant QA as Query API
+    participant WS as Live WS tier
+    participant Br as Browser dashboard
+
+    Src->>Col: emit event (tenant_id, dims, metrics)
+    Col->>K: produce (partition=tenant or key)
+    K->>En: consume
+    En->>En: join user/session dims
+    En->>Fl: enriched stream
+    par output
+        Fl->>Hot: append materialized window (1s/1m)
+    and
+        Fl->>Cold: archive raw/rollups
+    end
+
+    Br->>QA: open dashboard, POST query
+    QA->>QC: GET cached result
+    alt cache hit
+        QC-->>QA: rows
+    else miss
+        QA->>Hot: SQL (prefer pre-agg cube, partition prune by tenant/day)
+        Hot-->>QA: rows (< 500ms SLA or reject)
+        QA->>QC: SET result (short TTL)
+    end
+    QA-->>Br: initial chart data
+
+    Br->>WS: subscribe(query)
+    Fl-->>WS: window delta
+    WS-->>Br: push delta (< 5s)
+
+    Note over Fl: alerts evaluated inline; fire via notification system
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Columnar OLAP store (ClickHouse / Druid / Pinot)**
 
@@ -115,7 +162,7 @@ flowchart LR
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Flink job restart:** checkpoints to S3; resumes from last checkpoint. Recent numbers briefly stale.
 - **OLAP write lag:** visible in "as of" timestamp on charts.

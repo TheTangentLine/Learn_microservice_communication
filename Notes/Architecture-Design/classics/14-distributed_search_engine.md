@@ -53,7 +53,60 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Indexing (write path)**
+
+```mermaid
+sequenceDiagram
+    participant Cr as Crawler
+    participant RS as Raw HTML store
+    participant P as Parser
+    participant K as Kafka doc-events
+    participant I as Indexer
+    participant S1 as Shard 7 (primary)
+    participant S1r as Shard 7 replica
+
+    Cr->>RS: PUT html(url)
+    RS->>P: new doc
+    P->>P: tokenize, extract features
+    P->>K: publish DocProcessed{doc_id, tokens, fields}
+    K->>I: consume
+    I->>S1: write postings (append to tx log)
+    S1->>S1r: replicate
+    Note over S1: refresh_interval -> new segment searchable
+```
+
+**Flow B: Query (scatter-gather)**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Search Frontend
+    participant Ag as Aggregator
+    participant Sh as N Shards
+    participant C as Query Cache
+
+    U->>FE: q=best pizza nyc
+    FE->>C: GET q-hash
+    alt hot query cached
+        C-->>FE: top-10
+    else miss
+        FE->>Ag: route query
+        par fan-out to shards
+            Ag->>Sh: query {terms, filters, topK=100}
+            Sh-->>Ag: top-100 per shard + scores
+        end
+        Note over Ag: merge, re-rank with global features (CTR, PageRank, freshness, personalization)
+        Ag-->>FE: top-10 + snippets
+        FE->>C: SET q-hash short TTL
+    end
+    FE-->>U: SERP
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Sharding the index**
 
@@ -94,7 +147,7 @@ Production ranking is a learned model combining hundreds of features. Scores fro
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Shard down:** Aggregator fails over to replica; results still returned. Or, if no replica, returns partial results with a "some results may be missing" flag.
 - **Indexer lag:** stale results. Monitor freshness per-index.

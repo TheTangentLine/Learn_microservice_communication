@@ -55,7 +55,38 @@ flowchart LR
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant E as Edge/CDN
+    participant T as Typeahead Service
+    participant R as Redis (user history)
+
+    B->>E: GET /ac?q=new y
+    alt anonymous, prefix cache hit
+        E-->>B: cached top-10 for "new y"
+    else personalized or miss
+        E->>T: forward with cookie
+        Note over T: lookup in-memory trie node for "new y"
+        T->>R: HGET user:U recent_queries
+        R-->>T: user history
+        Note over T: merge global top-K + personal boost
+        T-->>E: top 10 suggestions
+        E-->>B: 200 [suggestions]
+    end
+
+    par async telemetry
+        B->>T: search submitted event
+        T->>T: emit to Kafka query-log
+    end
+    Note over T: Flink aggregator updates prefix->topK snapshot in S3 every 15 min; services hot-swap trie
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. The data structure — ranked trie or prefix map**
 
@@ -89,7 +120,7 @@ flowchart LR
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Index build pipeline lags.** Stale suggestions by a few hours. Non-fatal.
 - **Typeahead service OOM** during snapshot swap. Use phased rollout and memory headroom checks.

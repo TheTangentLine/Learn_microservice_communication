@@ -71,7 +71,54 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant Dev as Scanner / Driver app
+    participant SA as Scan API
+    participant K as Kafka scan-events (key=package_id)
+    participant SP as State Projector
+    participant PDB as Cassandra packages
+    participant SL as Immutable scan log
+    participant ETA as ETA Model
+    participant ER as Redis ETA
+    participant N as Notifications
+    participant WS as WebSocket
+    participant C as Customer
+    participant TA as Track API
+
+    Dev->>SA: scan event (may arrive in batch if offline)
+    SA->>SA: validate, dedupe, client-ts vs server-ts
+    SA->>K: produce (key=package_id, strict per-package order)
+
+    par consumers
+        K->>SP: consume
+        SP->>PDB: UPDATE current_status, last_location
+        SP->>SL: APPEND scan_seq
+    and
+        K->>ETA: recompute
+        ETA->>ER: SET eta:package
+        alt delay >= 2h threshold
+            ETA->>N: notify customer
+            N-->>C: push/email
+        end
+    end
+
+    C->>TA: GET /track/:id
+    TA->>PDB: get status
+    TA->>ER: GET eta
+    TA-->>C: 200 status+eta+history
+    C->>WS: subscribe
+    SP-->>WS: PUBLISH status change
+    WS-->>C: live update
+
+    Note over Dev,SL: corrections are ScanCorrected events appended; projector recomputes current_status without deleting history
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Scan event ingest**
 
@@ -108,7 +155,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Scanner offline for hours:** events arrive in bulk when reconnected; dedup + re-order. Customer might see status jump.
 - **ETA model outage:** last-known ETA served; stale indicator shown.

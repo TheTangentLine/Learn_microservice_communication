@@ -72,7 +72,47 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant P as Publisher Service
+    participant K as Kafka notif-requests
+    participant O as Orchestrator
+    participant PD as Prefs DB/Cache
+    participant D as Dedup Redis
+    participant QE as Email/SMS/Push Queues
+    participant W as Channel Worker
+    participant Ex as External (SES/Twilio/APNs)
+    participant T as Tracking DB
+
+    P->>K: publish NotificationRequested{user, type, body}
+    K->>O: consume
+    O->>PD: get user prefs
+    PD-->>O: channels + quiet hours
+    O->>D: SET NX hash(user,type,body_hash) TTL 24h
+    alt duplicate within 24h
+        D-->>O: already seen -> drop
+    else new
+        par fanout per opted-in channel
+            O->>QE: enqueue {channel, user, template, vars}
+        end
+        QE->>W: consume
+        W->>Ex: send (with idempotency key)
+        alt provider ok
+            Ex-->>W: accepted
+            W->>T: write {notif_id, channel, sent}
+        else breaker open / provider error
+            Note over W: push to DLQ or backoff retry
+            W->>T: write {notif_id, channel, failed}
+        end
+        Ex-->>T: async webhook (delivered/bounced) updates status
+    end
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. The Orchestrator**
 
@@ -109,7 +149,7 @@ Each channel has its own queue and workers. If Twilio is down:
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Provider outage (SES/Twilio).** Queue absorbs backlog. Breaker trips. Recovery on its own.
 - **Dedup cache wipe.** 24h duplicates pass through. Annoying but not catastrophic.

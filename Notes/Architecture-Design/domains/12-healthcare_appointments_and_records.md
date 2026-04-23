@@ -77,7 +77,62 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant P as Patient
+    participant D as Doctor
+    participant GW as Gateway + WAF
+    participant IAM as Identity / MFA
+    participant A as Appointment Svc
+    participant AD as Appt DB
+    participant E as EHR Svc (row-level auth)
+    participant ED as EHR DB (encrypted PHI)
+    participant Cn as Consent Store
+    participant K as Kafka
+    participant Au as Tamper-evident Audit
+    participant N as Notifications
+
+    P->>GW: POST /appointments {doctor, slot}
+    GW->>IAM: verify patient JWT + MFA
+    IAM-->>GW: ok (claims)
+    GW->>A: forward
+    A->>AD: BEGIN tx; lock slot row
+    alt slot free
+        A->>AD: INSERT appointment; release lock; COMMIT
+        A->>K: AppointmentBooked
+        A-->>P: 201 booked
+        par audit + notify
+            K->>Au: audit write (MUST succeed)
+        and
+            K->>N: schedule SMS/email reminders
+            N-->>P: confirmation
+        end
+    else conflict
+        A->>AD: ROLLBACK
+        A-->>P: 409 slot taken
+    end
+
+    D->>GW: GET /patients/P/records
+    GW->>IAM: verify doctor SSO + MFA
+    IAM-->>GW: claims (role, scope)
+    GW->>E: forward
+    E->>Cn: check treatment_relationship(D,P) + consent
+    alt authorized
+        E->>ED: decrypt+read fields
+        E->>Au: append access audit {who, what, why, ts, ip}
+        Note over E,Au: fail-closed: if audit write fails, the read MUST fail
+        E-->>D: 200 PHI
+    else denied / missing consent
+        E->>Au: append denied-access audit
+        E-->>D: 403
+    end
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Identity and access**
 
@@ -120,7 +175,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **EHR DB down:** read-only mode from replica; urgent ops only; primary restored ASAP.
 - **Audit write fails:** the operation **must fail**. Cannot allow an access without an audit trail. Fail-closed.

@@ -73,7 +73,80 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Post write (hybrid fanout + signal)**
+
+```mermaid
+sequenceDiagram
+    participant U as User (creator)
+    participant VS as Video Service
+    participant VDB as Cassandra
+    participant K as Kafka user-events
+    participant F as Fanout Worker
+    participant H as Redis home lists (followers)
+    participant CC as Celeb cache
+    participant FB as Feature Builder (Flink)
+    participant FS as Feature Store
+
+    U->>VS: upload + post
+    VS->>VDB: INSERT video metadata
+    VS->>K: PostCreated
+    par
+        K->>F: consume
+        alt creator is "normal"
+            F->>H: LPUSH home:follower post_id (for each follower)
+        else celeb
+            F->>CC: SET celeb:creator recent [...]
+        end
+    and
+        K->>FB: update creator/content features
+        FB->>FS: write features
+    end
+```
+
+**Flow B: For-You feed read (merge timeline + stories + ranking)**
+
+```mermaid
+sequenceDiagram
+    participant App as App
+    participant GW as API Gateway
+    participant FS as Feed Service
+    participant H as Redis home:U
+    participant CC as Celeb cache
+    participant St as Stories store
+    participant CG as Candidate Generator
+    participant FSt as Feature Store
+    participant R as Ranker (ML)
+    participant VDB as Video DB
+    participant CDN as Video CDN
+
+    App->>GW: GET /feed
+    GW->>FS: forward
+    par gather candidates
+        FS->>H: LRANGE home:U
+        H-->>FS: follow-graph candidates
+    and
+        FS->>CC: celebs followed
+    and
+        FS->>CG: retrieve (embeddings, trending, topic affinity)
+        CG-->>FS: ~500 candidates
+    and
+        FS->>St: fetch current stories (24h)
+    end
+    FS->>FSt: batch features(user, candidates)
+    FSt-->>FS: features
+    FS->>R: score(candidates, features)
+    R-->>FS: ranked list
+    FS->>VDB: MGET top-10 metadata + signed CDN URLs
+    VDB-->>FS: metadata
+    FS-->>App: 200 feed + stories
+    App->>CDN: fetch first segment (prefetched/low-quality)
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Candidate generation**
 
@@ -117,7 +190,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Ranker down.** Fallback: heuristic ranking (trending, recency). Feed quality drops but service continues.
 - **Feature store stale:** previous session's features used; gradual degradation, not outage.

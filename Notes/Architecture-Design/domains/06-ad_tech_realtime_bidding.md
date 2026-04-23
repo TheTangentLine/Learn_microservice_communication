@@ -59,7 +59,50 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant Pub as Publisher
+    participant RTB as RTB Exchange
+    participant B1 as Bidder 1
+    participant B2 as Bidder 2
+    participant Bn as Bidder N (up to 50)
+    participant CC as Creative Cache
+    participant K as Kafka auctions
+    participant Bill as Billing
+    participant Ana as Analytics
+
+    Pub->>RTB: bid request (user, context)
+    Note over RTB: parse + target filtering ~5ms
+    par parallel fan-out, 50ms deadline each, HTTP/2 keepalive, colocated
+        RTB->>B1: bid_req
+        B1-->>RTB: bid (CPM) within deadline
+    and
+        RTB->>B2: bid_req
+        B2-->>RTB: bid
+    and
+        RTB->>Bn: bid_req
+        Bn--xRTB: timeout >50ms -> dropped
+    end
+    Note over RTB: pick winner (highest CPM, with floor)
+    RTB->>CC: GET creative:<winner_ad_id>
+    CC-->>RTB: signed URL + metadata
+    RTB-->>Pub: 200 {creative url, price}
+
+    RTB->>K: AuctionCompleted {bids, winner, price}
+    par billing flow
+        K->>Bill: consume; bills only on impression confirm event later
+    and
+        K->>Ana: consume; update dashboards
+    end
+
+    Note over Pub: browser fetches creative from CDN; on view, fires ImpressionConfirmed event back to RTB/Bill
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. The 100ms budget**
 
@@ -125,7 +168,7 @@ Bidders that don't respond in 50ms are cut off. Their traffic is effectively exc
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Bidder slow/down:** dropped from auction by deadline. Revenue impact for them, not for us.
 - **RTB crash mid-auction:** publisher times out, shows fallback ad. Auction lost.

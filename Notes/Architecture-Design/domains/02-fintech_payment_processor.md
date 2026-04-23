@@ -58,7 +58,70 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant M as Merchant
+    participant GW as API Gateway
+    participant CA as Charge API
+    participant IK as Idempotency Store
+    participant F as Fraud Scorer
+    participant R as Network Router
+    participant N as Card Network
+    participant L as Ledger Svc
+    participant K as Kafka ledger-events
+    participant LDB as Double-entry Journal
+    participant BRM as Balance Read Model
+
+    M->>GW: POST /charge (Idempotency-Key, HMAC)
+    GW->>CA: forward
+    CA->>IK: GET key
+    alt duplicate
+        IK-->>CA: cached response
+        CA-->>M: original 200
+    else new
+        CA->>IK: SET key PENDING
+        CA->>L: append ChargeInitiated{tx_id, idempotency_key}
+        L->>K: produce
+        CA->>F: score(tx)
+        F-->>CA: risk score
+        alt fraud block
+            CA->>L: append ChargeBlocked
+            CA-->>M: 402 blocked
+        else accept
+            CA->>R: route(tx)
+            R->>N: authorize+capture
+            alt approved
+                N-->>R: approved, auth_code
+                R-->>CA: approved
+                CA->>L: append ChargeAuthorized + ChargeCaptured (double-entry)
+                L->>K: produce
+                CA->>IK: SET key SUCCESS (response)
+                CA-->>M: 200 {tx_id, auth_code}
+            else declined / timeout
+                N-->>R: declined or no-response
+                opt no-response
+                    R->>N: status query (explicit)
+                    N-->>R: applied? yes/no
+                end
+                CA->>L: append ChargeDeclined or ChargeAuthorized
+                CA-->>M: 402 or 200 (deterministic)
+            end
+        end
+    end
+
+    par projections
+        K->>LDB: write journal rows
+    and
+        K->>BRM: update merchant balance
+    end
+    Note over N,L: chargebacks arrive async -> ChargebackReceived -> compensating entries
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Double-entry bookkeeping as event-sourced ledger**
 
@@ -103,7 +166,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Card network timeout.** Retry up to N times. Mark charge as `UNKNOWN` — status query later reconciles.
 - **Ledger DB corruption.** Rebuild projections from Kafka.

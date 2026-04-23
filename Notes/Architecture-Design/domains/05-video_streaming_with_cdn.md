@@ -65,7 +65,60 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant S as Streamer OBS
+    participant IE as Ingest Edge
+    participant T as Transcoder (ABR, GPU)
+    participant O as Origin (HLS segments)
+    participant CDN as CDN Edge
+    participant V as Viewer
+    participant SR as Stream Registry
+    participant FG as Follow Graph
+    participant NS as Notification Svc
+    participant F as Followers
+    participant CA as Chat API
+    participant K as Kafka chat-events
+    participant RPS as Redis PS channel:stream
+    participant CWS as Chat WS tier
+
+    S->>IE: RTMP/SRT publish
+    IE->>T: forward
+    T->>O: write segments + manifest (1-4s chunks per rendition)
+    S->>SR: status=live
+    SR->>NS: StreamerLive
+    NS->>FG: get followers
+    par notifications
+        NS-->>F: push / email / in-app
+    end
+
+    V->>CDN: GET manifest
+    CDN->>O: (if miss) fill
+    CDN-->>V: manifest
+    loop ABR segments
+        V->>CDN: GET segment
+        alt edge hit
+            CDN-->>V: bytes
+        else miss
+            CDN->>O: fill (coalesced)
+            O-->>CDN: bytes
+            CDN-->>V: bytes
+        end
+        Note over V: throughput measured -> pick next bitrate; seek uses older cached segments for DVR
+    end
+
+    V->>CA: POST chat msg
+    CA->>K: produce
+    K->>RPS: relay to channel:stream
+    RPS->>CWS: subscribers (one per WS server)
+    CWS-->>V: fanout to local viewers (batched, with drop-on-slow)
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Ingest protocol (RTMP → SRT → WHIP)**
 
@@ -107,7 +160,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Ingest PoP down.** Streamer reconnects to a different PoP; there's usually a 3-10s reconnect gap.
 - **Transcoder failure.** Redundant pool; stream hot-swaps.

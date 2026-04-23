@@ -61,7 +61,48 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant App as Inventory Service
+    participant PG as Postgres
+    participant WAL as PG WAL
+    participant CDC as Debezium Relay
+    participant K as Kafka inventory-events
+    participant W as Warehouse Mgmt
+    participant P as Pricing
+    participant N as Notifier
+    participant A as Analytics
+
+    App->>PG: BEGIN
+    App->>PG: UPDATE inventory SET stock=stock-1 WHERE sku=SKU-42
+    App->>PG: INSERT outbox(aggregate_id=SKU-42, type=StockDecremented, payload)
+    App->>PG: COMMIT
+    PG-->>App: ok (atomic: business row + outbox row)
+
+    PG->>WAL: write record
+    WAL->>CDC: stream via logical slot
+    CDC->>K: produce {key=SKU-42, payload} (idempotent producer)
+    K-->>CDC: ack
+    CDC->>CDC: advance LSN checkpoint
+
+    par independent consumer groups (idempotent)
+        K->>W: consume; check processed_events(event_id); apply; commit offset
+    and
+        K->>P: consume; idempotent apply
+    and
+        K->>N: consume; send user notification
+    and
+        K->>A: consume; write analytics store
+    end
+
+    Note over PG: janitor deletes outbox rows only where id < committed_checkpoint - N
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. The outbox table**
 
@@ -125,7 +166,7 @@ The outbox makes the "I owe a publish" durable in the same DB transaction as the
 
 ---
 
-#### **5. Data Model**
+#### **6. Data Model**
 
 - `inventory(sku, stock, updated_at)` — business truth.
 - `outbox(id, aggregate_id, event_type, payload, created_at)` — the transactional publication record.
@@ -134,7 +175,7 @@ The outbox makes the "I owe a publish" durable in the same DB transaction as the
 
 ---
 
-#### **6. Pattern Rationale**
+#### **7. Pattern Rationale**
 
 - **Outbox solves the dual-write problem cleanly** — the single commit is a DB commit, which every RDBMS gives you for free.
 - **Alternative: 2PC between DB and Kafka.** Exists in theory, catastrophically impractical.
@@ -142,7 +183,7 @@ The outbox makes the "I owe a publish" durable in the same DB transaction as the
 
 ---
 
-#### **7. Failure Modes**
+#### **8. Failure Modes**
 
 - **App crashes after COMMIT.** Next transaction commits, outbox row remains. Relay picks it up later. No loss.
 - **Relay crashes mid-publish.** Next relay restart reads its last checkpoint. May re-publish last batch. Kafka idempotent producer + consumer idempotency handles it.

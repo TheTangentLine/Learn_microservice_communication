@@ -72,7 +72,59 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant U as Tenant User
+    participant GW as API Gateway
+    participant Au as Identity/SSO
+    participant RL as Per-tenant rate limit
+    participant App as App Svc (tenant-aware)
+    participant PG as Sharded Postgres (RLS)
+    participant R as Redis (prefix=T:tid)
+    participant K as Kafka (partition=tenant)
+    participant Ded as Dedicated App (enterprise)
+    participant DedPG as Dedicated PG
+    participant B as Billing
+    participant Ad as Audit
+
+    U->>GW: request + JWT
+    GW->>Au: verify JWT signature, issuer
+    Au-->>GW: claims {tenant_id, user_id, roles}
+    GW->>RL: check tenant budget
+    alt over budget
+        RL-->>GW: 429
+        GW-->>U: 429
+    else allowed
+        GW->>GW: tenant resolution (shared vs dedicated)
+        alt shared tier
+            GW->>App: forward with tenant_id header
+            App->>R: GET T:tid:key (namespaced)
+            alt cache miss
+                App->>PG: query with RLS enforced tenant_id
+                PG-->>App: rows (policy-filtered)
+                App->>R: SET T:tid:key
+            end
+        else enterprise dedicated
+            GW->>Ded: forward
+            Ded->>DedPG: query (isolated DB)
+        end
+        App->>K: produce (partition=tenant_id) metered event
+        App-->>GW: 200
+        GW-->>U: 200
+    end
+
+    par cross-cutting consumers
+        K->>B: billing aggregation (per tenant/day)
+    and
+        K->>Ad: audit log
+    end
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Tenant isolation models**
 
@@ -116,7 +168,7 @@ Typical: small tenants on shared; large enterprise on dedicated.
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Query missing tenant_id filter** → data leak. Worst possible bug. Mitigation: static analysis, row-level security, DB policies.
 - **Enterprise DB dies** → their whole product is down. Dedicated replicas.

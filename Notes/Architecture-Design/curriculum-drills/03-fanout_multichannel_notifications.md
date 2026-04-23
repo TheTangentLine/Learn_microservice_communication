@@ -65,7 +65,58 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant App as App Service
+    participant T as SNS user-events
+    participant QE as SQS email
+    participant QS as SQS sms
+    participant QP as SQS push
+    participant QA as SQS audit
+    participant E as Email Worker (SES)
+    participant S as SMS Worker (Twilio)
+    participant P as Push Worker (APNs/FCM)
+    participant A as Audit Worker
+    participant DB as Sent/seen tables
+
+    App->>T: Publish UserSignedUp (attrs: type=signup)
+    Note over T: filter policies route per subscription
+    par fanout
+        T->>QE: route if type in {signup,purchase,reset}
+    and
+        T->>QP: route if type in {signup,purchase,reset}
+    and
+        T->>QA: route (all)
+    end
+    Note over QS: skipped because filter requires type=purchase
+
+    par independent consumers
+        QE->>E: receive (visibility timeout)
+        E->>DB: check event_id seen?
+        alt not seen
+            E->>E: send via SES
+            E->>DB: INSERT sent_emails(event_id, recipient)
+            E->>QE: DeleteMessage (ack)
+        else seen
+            E->>QE: DeleteMessage (no-op)
+        end
+    and
+        QP->>P: receive
+        P->>P: send APNs/FCM (idempotent token)
+        P->>QP: ack
+    and
+        QA->>A: receive
+        A->>A: write S3 (audit)
+        A->>QA: ack
+    end
+    Note over QE: on repeated failure -> DLQ after 5 retries
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Why SNS → SQS and not SNS → Lambda directly**
 
@@ -93,14 +144,14 @@ flowchart TB
 
 ---
 
-#### **5. Data Model**
+#### **6. Data Model**
 
 - Event: `{event_id, user_id, type, timestamp, payload}`.
 - Each subscriber maintains its own state: sent-table, failure counts, per-event status.
 
 ---
 
-#### **6. Pattern Rationale**
+#### **7. Pattern Rationale**
 
 - **Publish once, many subscribers.** The SNS topic is the fanout primitive; SQS queues provide per-subscriber durability.
 - **vs Kafka:** Kafka would also work. SNS+SQS is simpler for "N independent sinks with filters," easier to operate on AWS, and per-queue retry/DLQ is built in. Kafka shines when you need replay or ordered per-key streams (see [cd-04](04-event_streaming_activity_log.md)).
@@ -108,7 +159,7 @@ flowchart TB
 
 ---
 
-#### **7. Failure Modes**
+#### **8. Failure Modes**
 
 - **SES outage** — email queue grows. Once SES is back, the queue drains. User might get the confirmation email 10 minutes late; they will not miss it.
 - **Poison message** — one event has malformed payload. After 5 retries, moves to DLQ. Manual intervention or a repair job replays after fix.

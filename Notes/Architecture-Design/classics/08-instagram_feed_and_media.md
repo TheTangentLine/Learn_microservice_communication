@@ -63,7 +63,70 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Upload + async media processing**
+
+```mermaid
+sequenceDiagram
+    participant C as App
+    participant API as Upload API
+    participant S3 as Blob Store
+    participant DB as Cassandra posts
+    participant K as Kafka post-events
+    participant MQ as Kafka media-processing
+    participant MW as Media Worker
+    participant CDN as CDN
+    participant F as Fanout Worker
+    participant H as Redis home timelines
+
+    C->>API: POST /upload/init
+    API-->>C: pre-signed PUT url
+    C->>S3: PUT photo bytes (direct)
+    S3-->>C: 200
+    C->>API: POST /post/commit {blob_key, caption}
+    API->>DB: INSERT post
+    API->>K: PostCreated
+    API->>MQ: MediaProcessingRequested
+    API-->>C: 201 post_id
+    par media
+        MQ->>MW: consume
+        MW->>S3: read original
+        MW->>S3: write 5 resolutions + HLS
+        MW->>CDN: prefetch/pre-warm
+    and feed fanout
+        K->>F: consume
+        loop followers (non-celeb)
+            F->>H: LPUSH home:follower post_id
+        end
+        Note over F: celebs: skip, pulled at read time
+    end
+```
+
+**Flow B: Feed read**
+
+```mermaid
+sequenceDiagram
+    participant C as App
+    participant FS as Feed Service
+    participant H as Redis home:U
+    participant DB as Cassandra
+    participant CDN as CDN
+
+    C->>FS: GET /feed
+    FS->>H: LRANGE home:U 0 50
+    H-->>FS: [post_ids]
+    FS->>DB: MGET post metadata
+    DB-->>FS: posts {media_keys, caption, ...}
+    Note over FS: rank via ML; compose media URLs (CDN hostnames)
+    FS-->>C: 200 feed
+    C->>CDN: GET media (thumbnail first, HD on tap)
+    CDN-->>C: bytes (edge hit expected)
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Upload path: direct-to-blob**
 
@@ -98,7 +161,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **CDN origin miss storm** after regional outage: `stale-while-revalidate` serves last-good; graceful.
 - **Transcoder backlog:** queue grows, lower-priority resolutions lag. Feed shows the best available.

@@ -59,7 +59,58 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Shorten**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant GW as API Gateway
+    participant S as Shorten Service
+    participant IDs as ID Service
+    participant DB as Cassandra
+    participant R as Redis
+
+    U->>GW: POST /shorten {long_url}
+    GW->>S: forward
+    S->>IDs: next_id
+    IDs-->>S: snowflake_id
+    Note over S: base62 encode -> short_code
+    S->>DB: put(short_code, long_url, ttl)
+    S->>R: SET short_code long_url
+    S-->>U: 200 {short_url}
+```
+
+**Flow B: Redirect + async click event**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant CDN as CDN/Edge
+    participant Rd as Redirect Service
+    participant R as Redis
+    participant DB as Cassandra
+    participant K as Kafka
+
+    U->>CDN: GET b.ly/xYz3A
+    CDN->>Rd: forward (if edge miss)
+    Rd->>R: GET short_code
+    alt cache hit
+        R-->>Rd: long_url
+    else cache miss
+        Rd->>DB: lookup short_code
+        DB-->>Rd: long_url
+        Rd->>R: SET short_code long_url
+    end
+    Rd-->>U: 302 Location: long_url
+    Rd->>K: publish {code, ts, ip, ua}
+    Note over K: analytics async, never blocks 302
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Code generation: hash vs counter**
 
@@ -87,7 +138,7 @@ Production answer: counter-based with some bits of randomness, managed by a smal
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **DB down.** Redis absorbs most reads. New shortens fail (accept the write outage).
 - **Kafka down.** Analytics lags, redirects continue (don't block user on async logging).

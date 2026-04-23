@@ -76,7 +76,55 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant R as Rider
+    participant Di as Dispatch
+    participant G as Redis Geo / H3
+    participant S as Surge Engine
+    participant Dr as Candidate Driver
+    participant K as Kafka ride-events
+    participant DB as Cassandra rides
+    participant L as Location Service
+
+    R->>Di: POST /ride {pickup, dest}
+    Di->>G: GEORADIUS 5km or H3 ring
+    G-->>Di: [driver_ids with eta]
+    Di->>S: GET surge(H3 cell)
+    S-->>Di: multiplier
+    Di-->>R: quote (fare, eta)
+    R->>Di: confirm
+
+    loop candidates by ETA rank
+        Di->>G: SET NX driver:status:d pending EX 10
+        alt lock acquired
+            Di->>Dr: offer ride (via WS)
+            alt driver accepts in 10s
+                Dr-->>Di: accept
+                Di->>K: RideMatched{ride_id, driver}
+                K->>DB: persist state
+                Di-->>R: matched (driver info)
+                Note over L,R: location streaming begins (1Hz) on ride:<id> channel
+            else reject / timeout
+                Note over Di: release lock, try next
+            end
+        else already pending
+            Note over Di: skip driver
+        end
+    end
+
+    loop ride lifecycle
+        Dr->>Di: state updates (arriving, picked_up, completed)
+        Di->>K: RideStateChanged (key=ride_id, strict order)
+        K->>DB: persist
+    end
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Driver location tracking — geo index at scale**
 
@@ -113,7 +161,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Dispatch service crash mid-offer:** driver times out the offer; next driver is tried. Rider sees "finding driver..." continue.
 - **Location Service lag:** matches may use stale locations. Mitigate with short TTL (5s) on location data.

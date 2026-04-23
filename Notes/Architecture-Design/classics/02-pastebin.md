@@ -57,7 +57,60 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Create paste**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant GW as API Gateway
+    participant P as Paste Service
+    participant S3 as S3
+    participant PG as Postgres
+
+    U->>GW: POST /paste {text, expiry, private?}
+    GW->>P: forward
+    Note over P: generate paste_id (base62)
+    P->>S3: PUT body (key=paste_id)
+    S3-->>P: 200
+    P->>PG: INSERT metadata(id, owner, expires_at, is_public, pwd_hash, syntax)
+    PG-->>P: committed
+    P-->>U: 201 {url=/p/paste_id}
+```
+
+**Flow B: Read paste (cache miss path)**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant GW as API Gateway
+    participant P as Paste Service
+    participant R as Redis
+    participant PG as Postgres
+    participant S3 as S3
+
+    U->>GW: GET /p/:id (+ password?)
+    GW->>P: forward
+    P->>R: GET meta:id
+    alt cache hit
+        R-->>P: metadata
+    else cache miss
+        P->>PG: SELECT metadata WHERE id
+        PG-->>P: metadata
+        P->>R: SET meta:id (short TTL)
+    end
+    alt private or password-protected
+        Note over P: verify JWT owner / argon2(password)
+    end
+    P->>S3: GET body (or return pre-signed URL)
+    S3-->>P: body
+    P-->>U: 200 {metadata, body}
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Storage split: metadata in PG, body in S3**
 
@@ -77,7 +130,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **S3 down.** Reads fail for bodies; metadata still viewable (degraded UX: "paste temporarily unavailable").
 - **Janitor misses a batch.** Worst case: expired pastes readable a bit longer. Idempotent retry catches up.

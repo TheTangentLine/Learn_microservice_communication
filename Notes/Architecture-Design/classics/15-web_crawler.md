@@ -65,7 +65,54 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+```mermaid
+sequenceDiagram
+    participant Q as URL Queue (per-domain partition)
+    participant F as Fetcher worker
+    participant R as Robots cache
+    participant I as Internet (site)
+    participant FDB as Frontier DB (etags)
+    participant H as Hasher
+    participant D as Dedup set
+    participant RB as Raw blobs
+    participant P as Parser
+    participant E as Link Extractor
+    participant K as Kafka doc-events (to indexer)
+
+    Q->>F: next URL u
+    F->>R: robots rules for host
+    alt disallowed or over crawl-delay
+        R-->>F: skip / wait
+    else allowed
+        F->>FDB: get etag, last_modified
+        F->>I: GET u (If-None-Match)
+        alt 304 Not Modified
+            I-->>F: 304
+            Note over F: done, nothing to do
+        else 200 OK
+            I-->>F: body
+            F->>H: hash(normalized body)
+            H->>D: SADD content_hash
+            alt duplicate content
+                D-->>F: already present -> mark dup
+            else new
+                F->>RB: store raw html
+                F->>FDB: update etag/last_modified
+                F->>P: parse
+                P->>K: DocProcessed
+                P->>E: extract links
+                E->>E: canonicalize + strip utm/ref
+                E->>Q: enqueue new URLs (priority by PageRank/freshness)
+            end
+        end
+    end
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. The URL frontier**
 
@@ -106,7 +153,7 @@ flowchart TB
 
 ---
 
-#### **5. Failure Modes**
+#### **6. Failure Modes**
 
 - **Spam trap (infinite parameter space):** limit path depth, limit parameter explosion, detect and blacklist domains.
 - **Giant site (wikipedia):** capped at fair share; don't crawl 100M pages from one site in a day.

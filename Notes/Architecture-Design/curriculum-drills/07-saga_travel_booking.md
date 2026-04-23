@@ -68,7 +68,81 @@ flowchart TB
 
 ---
 
-#### **4. Deep Dives**
+#### **4. Request Flow (Sequence)**
+
+**Flow A: Happy path**
+
+```mermaid
+sequenceDiagram
+    participant C as Customer
+    participant O as Booking Orchestrator
+    participant DB as Orchestrator DB
+    participant K as Kafka saga bus
+    participant F as Flight Svc
+    participant H as Hotel Svc
+    participant Ca as Car Svc
+    participant P as Payment Svc
+
+    C->>O: POST /booking {flight, hotel, car}
+    O->>DB: INSERT saga STARTED
+    O->>K: ReserveFlight{saga_id}
+    K->>F: consume
+    F-->>K: FlightReserved{saga_id, res_id}
+    K->>O: consume
+    O->>DB: state=FLIGHT_OK
+
+    O->>K: ReserveHotel{saga_id}
+    K->>H: consume
+    H-->>K: HotelReserved
+    O->>DB: state=HOTEL_OK
+
+    O->>K: ReserveCar{saga_id}
+    K->>Ca: consume
+    Ca-->>K: CarReserved
+    O->>DB: state=CAR_OK
+
+    O->>P: Capture payment (idempotency=saga_id)
+    P-->>O: PaymentSucceeded
+    O->>DB: state=DONE
+    O-->>C: 200 booked
+```
+
+**Flow B: Compensation (car unavailable)**
+
+```mermaid
+sequenceDiagram
+    participant O as Orchestrator
+    participant DB as Saga DB
+    participant K as Kafka
+    participant Ca as Car Svc
+    participant H as Hotel Svc
+    participant F as Flight Svc
+    participant C as Customer
+
+    Note over O: state=HOTEL_OK
+    O->>K: ReserveCar{saga_id}
+    K->>Ca: consume
+    Ca-->>K: CarUnavailable{saga_id}
+    K->>O: consume
+    O->>DB: state=COMPENSATING
+
+    O->>K: CancelHotel{saga_id} (idempotent)
+    K->>H: consume
+    H-->>K: HotelCancelled
+    O->>DB: state=COMP_FLIGHT
+
+    O->>K: CancelFlight{saga_id}
+    K->>F: consume
+    F-->>K: FlightCancelled
+    O->>DB: state=FAILED
+    O-->>C: 409 booking failed, nothing charged
+
+    Note over O: timer-based: if timeout fires before CarReserved, begin compensation the same way; late CarReserved is ignored because state != CAR_OK
+```
+
+---
+
+#### **5. Deep Dives**
 
 **4a. Orchestration vs Choreography**
 
@@ -116,14 +190,14 @@ stateDiagram-v2
 
 ---
 
-#### **5. Data Model**
+#### **6. Data Model**
 
 - Orchestrator: `sagas(saga_id, current_state, payload, created_at, updated_at, timeout_at)`.
 - Each domain service: `reservations(reservation_id, saga_id UNIQUE, status, ...)`.
 
 ---
 
-#### **6. Pattern Rationale**
+#### **7. Pattern Rationale**
 
 - **No 2PC.** Practical distributed transactions don't exist at internet scale across heterogeneous services. Sagas are the business-visible, compensation-based alternative.
 - **Orchestration over choreography** because the flow has clear stages, many compensation paths, and we want central observability.
@@ -131,7 +205,7 @@ stateDiagram-v2
 
 ---
 
-#### **7. Failure Modes**
+#### **8. Failure Modes**
 
 - **Orchestrator crashes mid-saga.** On restart, scan `sagas WHERE current_state NOT IN (DONE, FAILED) AND updated_at > ...`, re-run from the last persisted state.
 - **Compensation fails repeatedly.** Automated retries, then **manual queue for human operator**. Never silently drop a compensation — that leaves orphan reservations.
